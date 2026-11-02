@@ -49,6 +49,38 @@ export interface Scan {
   created_at: string;
 }
 
+export interface Scope {
+  id: string;
+  asset_id: string;
+  allowed_paths: string;
+  excluded_paths: string;
+  max_rate: number;
+  passive_only: boolean;
+  created_at: string;
+}
+
+export interface ScopeExclusion {
+  id: string;
+  asset_id: string;
+  pattern: string;
+  exclusion_type: 'path' | 'subdomain' | 'ip_range' | 'param';
+  reason: string;
+  created_at: string;
+}
+
+export interface AuditSession {
+  id: string;
+  name: string;
+  asset_id: string;
+  auditor_name: string;
+  status: 'active' | 'completed' | 'archived';
+  start_time: string;
+  end_time?: string;
+  summary?: string;
+  findings_count: number;
+  created_at: string;
+}
+
 export interface AuditLog {
   id: string;
   timestamp: string;
@@ -69,6 +101,8 @@ export interface DashboardStats {
   medium_vulns: number;
   low_vulns: number;
   verified_vulns: number;
+  active_sessions: number;
+  total_exclusions: number;
 }
 
 export type ModuleId =

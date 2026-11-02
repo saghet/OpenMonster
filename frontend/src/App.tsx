@@ -23,6 +23,8 @@ export const App: React.FC = () => {
     medium_vulns: 0,
     low_vulns: 0,
     verified_vulns: 0,
+    active_sessions: 0,
+    total_exclusions: 0,
   });
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -72,6 +74,14 @@ export const App: React.FC = () => {
 
   const handleToggleAuthorization = async (id: string, currentStatus: boolean) => {
     await api.authorizeAsset(id, !currentStatus, 'Lead Security Auditor (SEC-01)');
+    await loadData();
+  };
+
+  const handleDeleteAsset = async (id: string) => {
+    await api.deleteAsset(id);
+    if (selectedAsset?.id === id) {
+      setSelectedAsset(null);
+    }
     await loadData();
   };
 
@@ -135,6 +145,7 @@ export const App: React.FC = () => {
               assets={assets}
               onAddAsset={handleAddAsset}
               onToggleAuthorization={handleToggleAuthorization}
+              onDeleteAsset={handleDeleteAsset}
             />
           )}
 
@@ -155,7 +166,7 @@ export const App: React.FC = () => {
             <Reports assets={assets} vulnerabilities={vulnerabilities} />
           )}
 
-          {activeModule === 'audit-logs' && <AuditLogs logs={auditLogs} />}
+          {activeModule === 'audit-logs' && <AuditLogs logs={auditLogs} assets={assets} />}
 
           {/* Fallback for all other experimental or pending modules */}
           {![

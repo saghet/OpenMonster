@@ -1,4 +1,4 @@
-import { Asset, AuditLog, DashboardStats, Scan, Vulnerability } from '../types';
+import { Asset, AuditLog, AuditSession, DashboardStats, Scan, Scope, ScopeExclusion, Vulnerability } from '../types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -10,11 +10,13 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
   throw new Error('Not running inside Tauri desktop environment');
 }
 
-// Local mock storage for standalone browser preview
+// Local mock storage keys
 const MOCK_STORAGE_KEY_ASSETS = 'sec_master_mock_assets';
 const MOCK_STORAGE_KEY_VULNS = 'sec_master_mock_vulns';
 const MOCK_STORAGE_KEY_SCANS = 'sec_master_mock_scans';
 const MOCK_STORAGE_KEY_AUDIT = 'sec_master_mock_audit';
+const MOCK_STORAGE_KEY_EXCLUSIONS = 'sec_master_mock_exclusions';
+const MOCK_STORAGE_KEY_SESSIONS = 'sec_master_mock_sessions';
 
 function getMockAssets(): Asset[] {
   const data = localStorage.getItem(MOCK_STORAGE_KEY_ASSETS);
@@ -54,6 +56,50 @@ function getMockAssets(): Asset[] {
     },
   ];
   localStorage.setItem(MOCK_STORAGE_KEY_ASSETS, JSON.stringify(initial));
+  return initial;
+}
+
+function getMockExclusions(): ScopeExclusion[] {
+  const data = localStorage.getItem(MOCK_STORAGE_KEY_EXCLUSIONS);
+  if (data) return JSON.parse(data);
+  const initial: ScopeExclusion[] = [
+    {
+      id: 'exc-1',
+      asset_id: 'ast-1',
+      pattern: '/admin/delete',
+      exclusion_type: 'path',
+      reason: 'Prevents destructive administrative state changes',
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'exc-2',
+      asset_id: 'ast-1',
+      pattern: '/auth/logout',
+      exclusion_type: 'path',
+      reason: 'Avoids prematurely terminating scanner session tokens',
+      created_at: new Date().toISOString(),
+    },
+  ];
+  localStorage.setItem(MOCK_STORAGE_KEY_EXCLUSIONS, JSON.stringify(initial));
+  return initial;
+}
+
+function getMockSessions(): AuditSession[] {
+  const data = localStorage.getItem(MOCK_STORAGE_KEY_SESSIONS);
+  if (data) return JSON.parse(data);
+  const initial: AuditSession[] = [
+    {
+      id: 'sess-1',
+      name: 'Auditoría Trimestral Q4 - Staging',
+      asset_id: 'ast-1',
+      auditor_name: 'Lead Auditor (SEC-01)',
+      status: 'active',
+      start_time: new Date(Date.now() - 3600000 * 5).toISOString(),
+      findings_count: 3,
+      created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    },
+  ];
+  localStorage.setItem(MOCK_STORAGE_KEY_SESSIONS, JSON.stringify(initial));
   return initial;
 }
 
@@ -147,6 +193,8 @@ export const api = {
     } catch {
       const assets = getMockAssets();
       const vulns = getMockVulnerabilities();
+      const sessions = getMockSessions();
+      const exclusions = getMockExclusions();
       return {
         total_assets: assets.length,
         authorized_assets: assets.filter(a => a.authorized).length,
@@ -157,6 +205,8 @@ export const api = {
         medium_vulns: vulns.filter(v => v.severity === 'medium').length,
         low_vulns: vulns.filter(v => v.severity === 'low').length,
         verified_vulns: vulns.filter(v => v.verified).length,
+        active_sessions: sessions.filter(s => s.status === 'active').length,
+        total_exclusions: exclusions.length,
       };
     }
   },
@@ -192,6 +242,15 @@ export const api = {
     }
   },
 
+  async deleteAsset(id: string): Promise<void> {
+    try {
+      await tauriInvoke('delete_asset', { id });
+    } catch {
+      const assets = getMockAssets().filter(a => a.id !== id);
+      localStorage.setItem(MOCK_STORAGE_KEY_ASSETS, JSON.stringify(assets));
+    }
+  },
+
   async authorizeAsset(id: string, authorized: boolean, authorizedBy: string): Promise<void> {
     try {
       await tauriInvoke('authorize_asset', {
@@ -206,6 +265,120 @@ export const api = {
         asset.authorized_at = authorized ? new Date().toISOString() : undefined;
         asset.updated_at = new Date().toISOString();
         localStorage.setItem(MOCK_STORAGE_KEY_ASSETS, JSON.stringify(assets));
+      }
+    }
+  },
+
+  async getScope(assetId: string): Promise<Scope | null> {
+    try {
+      return await tauriInvoke<Scope | null>('get_scope', { assetId });
+    } catch {
+      const assets = getMockAssets();
+      const asset = assets.find(a => a.id === assetId);
+      return {
+        id: `scp-${assetId}`,
+        asset_id: assetId,
+        allowed_paths: '["/"]',
+        excluded_paths: '["/logout", "/admin/delete"]',
+        max_rate: 20,
+        passive_only: !asset?.authorized,
+        created_at: new Date().toISOString(),
+      };
+    }
+  },
+
+  async updateScope(scope: Scope): Promise<void> {
+    try {
+      await tauriInvoke('update_scope', { scope });
+    } catch {
+      console.log('Mock: Scope updated', scope);
+    }
+  },
+
+  async listExclusions(assetId: string): Promise<ScopeExclusion[]> {
+    try {
+      return await tauriInvoke<ScopeExclusion[]>('list_exclusions', { assetId });
+    } catch {
+      return getMockExclusions().filter(e => e.asset_id === assetId);
+    }
+  },
+
+  async addExclusion(assetId: string, pattern: string, exclusionType: 'path' | 'subdomain' | 'ip_range' | 'param', reason: string): Promise<ScopeExclusion> {
+    try {
+      return await tauriInvoke<ScopeExclusion>('add_exclusion', {
+        req: { asset_id: assetId, pattern, exclusion_type: exclusionType, reason }
+      });
+    } catch {
+      const list = getMockExclusions();
+      const newExc: ScopeExclusion = {
+        id: `exc-${Date.now()}`,
+        asset_id: assetId,
+        pattern,
+        exclusion_type: exclusionType,
+        reason,
+        created_at: new Date().toISOString(),
+      };
+      list.unshift(newExc);
+      localStorage.setItem(MOCK_STORAGE_KEY_EXCLUSIONS, JSON.stringify(list));
+      return newExc;
+    }
+  },
+
+  async deleteExclusion(id: string): Promise<void> {
+    try {
+      await tauriInvoke('delete_exclusion', { id });
+    } catch {
+      const list = getMockExclusions().filter(e => e.id !== id);
+      localStorage.setItem(MOCK_STORAGE_KEY_EXCLUSIONS, JSON.stringify(list));
+    }
+  },
+
+  async listAuditSessions(assetId?: string): Promise<AuditSession[]> {
+    try {
+      return await tauriInvoke<AuditSession[]>('list_audit_sessions', { assetId: assetId || null });
+    } catch {
+      const list = getMockSessions();
+      if (assetId) {
+        return list.filter(s => s.asset_id === assetId);
+      }
+      return list;
+    }
+  },
+
+  async createAuditSession(name: string, assetId: string, auditorName: string): Promise<AuditSession> {
+    try {
+      return await tauriInvoke<AuditSession>('create_audit_session', {
+        req: { name, asset_id: assetId, auditor_name: auditorName }
+      });
+    } catch {
+      const list = getMockSessions();
+      const newSess: AuditSession = {
+        id: `sess-${Date.now()}`,
+        name,
+        asset_id: assetId,
+        auditor_name: auditorName,
+        status: 'active',
+        start_time: new Date().toISOString(),
+        findings_count: 0,
+        created_at: new Date().toISOString(),
+      };
+      list.unshift(newSess);
+      localStorage.setItem(MOCK_STORAGE_KEY_SESSIONS, JSON.stringify(list));
+      return newSess;
+    }
+  },
+
+  async closeAuditSession(id: string, summary?: string): Promise<void> {
+    try {
+      await tauriInvoke('close_audit_session', { id, summary: summary || null });
+    } catch {
+      const list = getMockSessions();
+      const s = list.find(x => x.id === id);
+      if (s) {
+        s.status = 'completed';
+        s.end_time = new Date().toISOString();
+        s.summary = summary;
+        localStorage.setItem(MOCK_STORAGE_KEY_SESSIONS, JSON.stringify(list));
       }
     }
   },

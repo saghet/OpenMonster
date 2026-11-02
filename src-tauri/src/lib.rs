@@ -16,7 +16,7 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("./data"));
-            
+
             if !app_dir.exists() {
                 let _ = fs::create_dir_all(&app_dir);
             }
@@ -29,14 +29,23 @@ pub fn run() {
                 db: Arc::new(db_manager),
             });
 
-            log::info!("SECMASTER database initialized successfully.");
+            log::info!("SECMASTER database and scope subsystems initialized.");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_dashboard_stats,
             commands::get_assets,
             commands::create_asset,
+            commands::delete_asset,
             commands::authorize_asset,
+            commands::get_scope,
+            commands::update_scope,
+            commands::list_exclusions,
+            commands::add_exclusion,
+            commands::delete_exclusion,
+            commands::list_audit_sessions,
+            commands::create_audit_session,
+            commands::close_audit_session,
             commands::get_vulnerabilities,
             commands::get_audit_logs,
             commands::get_scans,

@@ -141,6 +141,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* Phase 2: Active Sessions and Scope Exclusions Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="p-4 rounded-xl bg-[#111726] border border-[#1f293d] flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-xs text-slate-400">Sesiones de Auditoría Activas</span>
+            <div className="text-xl font-bold font-mono text-slate-100 flex items-center gap-2">
+              <span>{stats.active_sessions || 0}</span>
+              <span className="text-xs text-emerald-400 font-normal">en curso</span>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('audit-logs')}
+            className="px-3 py-1.5 rounded-lg bg-[#162032] hover:bg-[#1e2d45] border border-[#27354f] text-cyan-300 text-xs font-medium"
+          >
+            Ver Sesiones
+          </button>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#111726] border border-[#1f293d] flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-xs text-slate-400">Reglas de Exclusión de Alcance</span>
+            <div className="text-xl font-bold font-mono text-slate-100 flex items-center gap-2">
+              <span>{stats.total_exclusions || 0}</span>
+              <span className="text-xs text-amber-400 font-normal">rutas protegidas</span>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('asset-discovery')}
+            className="px-3 py-1.5 rounded-lg bg-[#162032] hover:bg-[#1e2d45] border border-[#27354f] text-amber-300 text-xs font-medium"
+          >
+            Configurar Exclusiones
+          </button>
+        </div>
+      </div>
+
       {/* Charts & Real-Time Stream Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Severity Distribution Chart */}

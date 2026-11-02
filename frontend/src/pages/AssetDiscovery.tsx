@@ -9,31 +9,50 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Sliders,
+  Trash2,
+  X,
+  FileMinus
 } from 'lucide-react';
-import { Asset } from '../types';
+import { Asset, ScopeExclusion } from '../types';
+import { api } from '../services/api';
 
 interface AssetDiscoveryProps {
   assets: Asset[];
-  onAddAsset: (name: string, target: string, assetType: 'domain' | 'ip' | 'url' | 'cidr', notes?: string) => Promise<void>;
+  onAddAsset: (
+    name: string,
+    target: string,
+    assetType: 'domain' | 'ip' | 'url' | 'cidr',
+    notes?: string
+  ) => Promise<void>;
   onToggleAuthorization: (id: string, currentStatus: boolean) => Promise<void>;
+  onDeleteAsset: (id: string) => Promise<void>;
 }
 
 export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
   assets,
   onAddAsset,
   onToggleAuthorization,
+  onDeleteAsset,
 }) => {
-  const [showModal, setShowModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedAssetForScope, setSelectedAssetForScope] = useState<Asset | null>(null);
+  const [exclusions, setExclusions] = useState<ScopeExclusion[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
 
-  // Form states
+  // Form states for new asset
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
   const [assetType, setAssetType] = useState<'domain' | 'ip' | 'url' | 'cidr'>('url');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Form states for scope exclusion
+  const [newExclusionPattern, setNewExclusionPattern] = useState('');
+  const [newExclusionReason, setNewExclusionReason] = useState('');
+  const [newExclusionType, setNewExclusionType] = useState<'path' | 'subdomain' | 'ip_range' | 'param'>('path');
 
   const filteredAssets = assets.filter((a) => {
     const matchesSearch =
@@ -53,7 +72,7 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
     setSubmitting(true);
     try {
       await onAddAsset(name.trim(), target.trim(), assetType, notes.trim());
-      setShowModal(false);
+      setShowAddModal(false);
       setName('');
       setTarget('');
       setNotes('');
@@ -64,6 +83,44 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
     }
   };
 
+  const handleOpenScopeModal = async (asset: Asset) => {
+    setSelectedAssetForScope(asset);
+    try {
+      const list = await api.listExclusions(asset.id);
+      setExclusions(list);
+    } catch (err) {
+      console.error('Error loading exclusions:', err);
+    }
+  };
+
+  const handleAddExclusion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssetForScope || !newExclusionPattern.trim()) return;
+
+    try {
+      const created = await api.addExclusion(
+        selectedAssetForScope.id,
+        newExclusionPattern.trim(),
+        newExclusionType,
+        newExclusionReason.trim() || 'Protección de endpoint crítico'
+      );
+      setExclusions((prev) => [created, ...prev]);
+      setNewExclusionPattern('');
+      setNewExclusionReason('');
+    } catch (err) {
+      console.error('Failed to add exclusion:', err);
+    }
+  };
+
+  const handleDeleteExclusion = async (id: string) => {
+    try {
+      await api.deleteExclusion(id);
+      setExclusions((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      console.error('Failed to delete exclusion:', err);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(100vh-4rem)]">
       {/* Scope Policy Information */}
@@ -71,14 +128,14 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
         <div className="space-y-1">
           <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
             <ShieldCheck size={18} className="text-cyan-400" />
-            Control de Alcance y Whitelisting Obligatorio
+            Gestión de Activos y Control de Alcance (Scope Whitelisting)
           </h3>
           <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
-            De acuerdo con los estándares de Ethical Hacking, ningún escaneo activo puede iniciarse sin que el objetivo esté expresamente autorizado. Por defecto, los objetivos se registran en <strong className="text-slate-200">Modo Pasivo Restringido</strong>.
+            De acuerdo con las directivas de Ethical Hacking, ningún escaneo activo puede iniciarse sin que el objetivo esté expresamente autorizado. Cada activo dispone de políticas de exclusión independientes para proteger rutas de destrucción de datos o endpoints de logout.
           </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => setShowAddModal(true)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold transition-all shadow-md shadow-cyan-950"
         >
           <Plus size={16} />
@@ -127,7 +184,7 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
                 <th className="py-3 px-4">Objetivo / FQDN</th>
                 <th className="py-3 px-4">Estado de Autorización</th>
                 <th className="py-3 px-4">Auditor / Fecha</th>
-                <th className="py-3 px-4 text-right">Acción de Alcance</th>
+                <th className="py-3 px-4 text-right">Acciones de Alcance</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1f293d]">
@@ -165,7 +222,7 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
                     <td className="py-3 px-4 text-slate-400 text-[11px]">
                       {asset.authorized_by ? (
                         <div>
-                          <div>{asset.authorized_by}</div>
+                          <div className="font-medium text-slate-200">{asset.authorized_by}</div>
                           <div className="text-[10px] text-slate-400">
                             {new Date(asset.authorized_at || '').toLocaleDateString()}
                           </div>
@@ -174,7 +231,18 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
                         <span className="text-slate-400 italic">No firmado</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right space-x-2">
+                      {/* Open Scope & Exclusions Manager */}
+                      <button
+                        onClick={() => handleOpenScopeModal(asset)}
+                        className="px-2.5 py-1 rounded text-xs font-medium bg-[#162032] hover:bg-[#1e2d45] text-cyan-300 border border-[#27354f] transition-colors"
+                        title="Gestionar Exclusiones y Límites"
+                      >
+                        <Sliders size={13} className="inline mr-1" />
+                        Políticas
+                      </button>
+
+                      {/* Scope Toggle */}
                       <button
                         onClick={() => onToggleAuthorization(asset.id, asset.authorized)}
                         className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
@@ -183,7 +251,20 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
                             : 'bg-emerald-950/40 text-emerald-300 border-emerald-800/40 hover:bg-emerald-900/60'
                         }`}
                       >
-                        {asset.authorized ? 'Revocar Alcance' : 'Firmar Autorización'}
+                        {asset.authorized ? 'Revocar' : 'Firmar Alcance'}
+                      </button>
+
+                      {/* Delete Asset */}
+                      <button
+                        onClick={() => {
+                          if (confirm(`¿Eliminar el activo '${asset.name}' y sus registros?`)) {
+                            onDeleteAsset(asset.id);
+                          }
+                        }}
+                        className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+                        title="Eliminar activo"
+                      >
+                        <Trash2 size={13} />
                       </button>
                     </td>
                   </tr>
@@ -194,8 +275,130 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
         </div>
       </div>
 
+      {/* Scope Exclusions & Policies Modal */}
+      {selectedAssetForScope && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#111726] border border-[#1f293d] rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-[#1f293d] pb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Sliders size={18} className="text-cyan-400" />
+                  Políticas y Exclusiones de Alcance: {selectedAssetForScope.name}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Objetivo: {selectedAssetForScope.target}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedAssetForScope(null)}
+                className="p-1 rounded-lg bg-[#162032] text-slate-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Exclusions List */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Rutas y Patrones Excluidos del Escaneo ({exclusions.length})</span>
+                <span className="text-[11px] font-normal text-emerald-400 font-mono">Protección Activa</span>
+              </h4>
+
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {exclusions.length === 0 ? (
+                  <div className="p-4 rounded-lg bg-[#0d121f] border border-[#1f293d] text-center text-xs text-slate-400">
+                    No hay exclusiones configuradas para este activo.
+                  </div>
+                ) : (
+                  exclusions.map((exc) => (
+                    <div
+                      key={exc.id}
+                      className="p-3 rounded-lg bg-[#0d121f] border border-[#1f293d] flex items-center justify-between text-xs"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-cyan-300 font-bold">{exc.pattern}</span>
+                          <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {exc.exclusion_type}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">{exc.reason}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteExclusion(exc.id)}
+                        className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40"
+                        title="Eliminar regla de exclusión"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Add Exclusion Form */}
+            <form onSubmit={handleAddExclusion} className="p-4 rounded-xl bg-[#0d121f] border border-[#1f293d] space-y-3 text-xs">
+              <h5 className="font-semibold text-slate-200 flex items-center gap-1.5">
+                <FileMinus size={14} className="text-amber-400" />
+                Añadir Regla de Exclusión
+              </h5>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-slate-400 mb-1">Patrón de Ruta o URL</label>
+                  <input
+                    type="text"
+                    placeholder="ej. /admin/delete o /auth/logout"
+                    value={newExclusionPattern}
+                    onChange={(e) => setNewExclusionPattern(e.target.value)}
+                    className="w-full bg-[#111726] border border-[#1f293d] rounded-lg px-3 py-2 text-slate-100 font-mono focus:outline-none focus:border-cyan-500/50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1">Tipo de Exclusión</label>
+                  <select
+                    value={newExclusionType}
+                    onChange={(e) => setNewExclusionType(e.target.value as 'path' | 'subdomain' | 'ip_range' | 'param')}
+                    className="w-full bg-[#111726] border border-[#1f293d] rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="path">Ruta URL (Path)</option>
+                    <option value="param">Parámetro HTTP</option>
+                    <option value="subdomain">Subdominio</option>
+                    <option value="ip_range">Rango IP</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Justificación de Seguridad</label>
+                <input
+                  type="text"
+                  placeholder="ej. Endpoint sensible de facturación en producción"
+                  value={newExclusionReason}
+                  onChange={(e) => setNewExclusionReason(e.target.value)}
+                  className="w-full bg-[#111726] border border-[#1f293d] rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500/50"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors"
+                >
+                  Registrar Exclusión
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Register Asset Modal */}
-      {showModal && (
+      {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#111726] border border-[#1f293d] rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
@@ -263,7 +466,7 @@ export const AssetDiscovery: React.FC<AssetDiscoveryProps> = ({
               <div className="flex items-center justify-end space-x-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => setShowAddModal(false)}
                   className="px-4 py-2 rounded-lg bg-[#162032] text-slate-300 hover:bg-[#1e2d45]"
                 >
                   Cancelar

@@ -1,4 +1,7 @@
-use crate::db::{Asset, AuditLog, DashboardStats, DatabaseManager, Scan, Vulnerability};
+use crate::db::{
+    Asset, AuditLog, AuditSession, DashboardStats, DatabaseManager, Scan, Scope, ScopeExclusion,
+    Vulnerability,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -29,6 +32,21 @@ pub struct CreateScanRequest {
     pub asset_id: String,
     pub scan_mode: String,
     pub config_json: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddExclusionRequest {
+    pub asset_id: String,
+    pub pattern: String,
+    pub exclusion_type: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateSessionRequest {
+    pub name: String,
+    pub asset_id: String,
+    pub auditor_name: String,
 }
 
 #[tauri::command]
@@ -62,7 +80,6 @@ pub async fn create_asset(
 
     state.db.insert_asset(&asset).map_err(|e| e.to_string())?;
 
-    // Audit log
     let log = AuditLog {
         id: Uuid::new_v4().to_string(),
         timestamp: now,
@@ -75,6 +92,24 @@ pub async fn create_asset(
     let _ = state.db.insert_audit_log(&log);
 
     Ok(asset)
+}
+
+#[tauri::command]
+pub async fn delete_asset(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.db.delete_asset(&id).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: "Operator".to_string(),
+        action: "DELETE_ASSET".to_string(),
+        target: Some(id),
+        details_json: "{}".to_string(),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -106,6 +141,135 @@ pub async fn authorize_asset(
 }
 
 #[tauri::command]
+pub async fn get_scope(asset_id: String, state: State<'_, AppState>) -> Result<Option<Scope>, String> {
+    state.db.get_scope(&asset_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_scope(scope: Scope, state: State<'_, AppState>) -> Result<(), String> {
+    state.db.update_scope(&scope).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: "Operator".to_string(),
+        action: "UPDATE_SCOPE_POLICIES".to_string(),
+        target: Some(scope.asset_id),
+        details_json: format!("{{\"rate_limit\": {}, \"passive\": {}}}", scope.max_rate, scope.passive_only),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_exclusions(asset_id: String, state: State<'_, AppState>) -> Result<Vec<ScopeExclusion>, String> {
+    state.db.list_exclusions(&asset_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn add_exclusion(req: AddExclusionRequest, state: State<'_, AppState>) -> Result<ScopeExclusion, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let exc = ScopeExclusion {
+        id: Uuid::new_v4().to_string(),
+        asset_id: req.asset_id.clone(),
+        pattern: req.pattern.clone(),
+        exclusion_type: req.exclusion_type,
+        reason: req.reason,
+        created_at: now.clone(),
+    };
+
+    state.db.insert_exclusion(&exc).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: now,
+        actor: "Operator".to_string(),
+        action: "ADD_SCOPE_EXCLUSION".to_string(),
+        target: Some(req.asset_id),
+        details_json: format!("{{\"pattern\": \"{}\"}}", req.pattern),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(exc)
+}
+
+#[tauri::command]
+pub async fn delete_exclusion(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.db.delete_exclusion(&id).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: "Operator".to_string(),
+        action: "REMOVE_SCOPE_EXCLUSION".to_string(),
+        target: Some(id),
+        details_json: "{}".to_string(),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_audit_sessions(asset_id: Option<String>, state: State<'_, AppState>) -> Result<Vec<AuditSession>, String> {
+    state.db.list_audit_sessions(asset_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_audit_session(req: CreateSessionRequest, state: State<'_, AppState>) -> Result<AuditSession, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let session = AuditSession {
+        id: Uuid::new_v4().to_string(),
+        name: req.name,
+        asset_id: req.asset_id.clone(),
+        auditor_name: req.auditor_name,
+        status: "active".to_string(),
+        start_time: now.clone(),
+        end_time: None,
+        summary: None,
+        findings_count: 0,
+        created_at: now.clone(),
+    };
+
+    state.db.insert_audit_session(&session).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: now,
+        actor: session.auditor_name.clone(),
+        action: "START_AUDIT_SESSION".to_string(),
+        target: Some(req.asset_id),
+        details_json: format!("{{\"session_id\": \"{}\"}}", session.id),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(session)
+}
+
+#[tauri::command]
+pub async fn close_audit_session(id: String, summary: Option<String>, state: State<'_, AppState>) -> Result<(), String> {
+    state.db.close_audit_session(&id, summary.as_deref()).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: "Operator".to_string(),
+        action: "CLOSE_AUDIT_SESSION".to_string(),
+        target: Some(id),
+        details_json: "{}".to_string(),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_vulnerabilities(state: State<'_, AppState>) -> Result<Vec<Vulnerability>, String> {
     state.db.list_vulnerabilities().map_err(|e| e.to_string())
 }
@@ -125,7 +289,6 @@ pub async fn create_scan(
     req: CreateScanRequest,
     state: State<'_, AppState>,
 ) -> Result<Scan, String> {
-    // Scope authorization check
     let assets = state.db.list_assets().map_err(|e| e.to_string())?;
     let target_asset = assets.iter().find(|a| a.id == req.asset_id);
 

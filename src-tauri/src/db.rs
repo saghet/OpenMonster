@@ -18,6 +18,41 @@ pub struct Asset {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Scope {
+    pub id: String,
+    pub asset_id: String,
+    pub allowed_paths: String,
+    pub excluded_paths: String,
+    pub max_rate: i64,
+    pub passive_only: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScopeExclusion {
+    pub id: String,
+    pub asset_id: String,
+    pub pattern: String,
+    pub exclusion_type: String,
+    pub reason: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuditSession {
+    pub id: String,
+    pub name: String,
+    pub asset_id: String,
+    pub auditor_name: String,
+    pub status: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub summary: Option<String>,
+    pub findings_count: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Vulnerability {
     pub id: String,
     pub scan_id: String,
@@ -77,6 +112,8 @@ pub struct DashboardStats {
     pub medium_vulns: i64,
     pub low_vulns: i64,
     pub verified_vulns: i64,
+    pub active_sessions: i64,
+    pub total_exclusions: i64,
 }
 
 pub struct DatabaseManager {
@@ -104,67 +141,91 @@ impl DatabaseManager {
 
     fn run_migrations(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let migration_sql = include_str!("../../database/migrations/001_initial_schema.sql");
-        conn.execute_batch(migration_sql)?;
+        let m1 = include_str!("../../database/migrations/001_initial_schema.sql");
+        conn.execute_batch(m1)?;
+        let m2 = include_str!("../../database/migrations/002_phase2_scope_enhancements.sql");
+        conn.execute_batch(m2)?;
         Ok(())
     }
 
     pub fn get_dashboard_stats(&self) -> Result<DashboardStats> {
         let conn = self.conn.lock().unwrap();
-        
-        let total_assets: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM assets",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
 
-        let authorized_assets: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM assets WHERE authorized = 1",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let total_assets: i64 = conn
+            .query_row("SELECT COUNT(*) FROM assets", [], |r| r.get(0))
+            .unwrap_or(0);
 
-        let active_scans: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM scans WHERE status = 'running'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let authorized_assets: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM assets WHERE authorized = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
-        let total_vulnerabilities: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let active_scans: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scans WHERE status = 'running'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
-        let critical_vulns: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'critical'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let total_vulnerabilities: i64 = conn
+            .query_row("SELECT COUNT(*) FROM vulnerabilities", [], |r| r.get(0))
+            .unwrap_or(0);
 
-        let high_vulns: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'high'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let critical_vulns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'critical'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
-        let medium_vulns: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'medium'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let high_vulns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'high'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
-        let low_vulns: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'low'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let medium_vulns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'medium'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
-        let verified_vulns: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM vulnerabilities WHERE verified = 1",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let low_vulns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vulnerabilities WHERE severity = 'low'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let verified_vulns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vulnerabilities WHERE verified = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let active_sessions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit_sessions WHERE status = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let total_exclusions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scope_exclusions", [], |r| r.get(0))
+            .unwrap_or(0);
 
         Ok(DashboardStats {
             total_assets,
@@ -176,15 +237,17 @@ impl DatabaseManager {
             medium_vulns,
             low_vulns,
             verified_vulns,
+            active_sessions,
+            total_exclusions,
         })
     }
 
     pub fn list_assets(&self) -> Result<Vec<Asset>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, target, asset_type, authorized, authorized_by, authorized_at, notes, created_at, updated_at FROM assets ORDER BY created_at DESC"
+            "SELECT id, name, target, asset_type, authorized, authorized_by, authorized_at, notes, created_at, updated_at FROM assets ORDER BY created_at DESC",
         )?;
-        
+
         let rows = stmt.query_map([], |row| {
             let auth_int: i64 = row.get(4)?;
             Ok(Asset {
@@ -225,10 +288,29 @@ impl DatabaseManager {
                 asset.updated_at
             ],
         )?;
+
+        // Automatically create associated default scope record in passive mode
+        let scope_id = format!("scp-{}", asset.id);
+        conn.execute(
+            "INSERT OR IGNORE INTO scopes (id, asset_id, allowed_paths, excluded_paths, max_rate, passive_only, created_at) VALUES (?1, ?2, '[\"/\"]', '[\"/logout\", \"/admin/delete\"]', 20, 1, ?3)",
+            params![scope_id, asset.id, asset.created_at],
+        )?;
+
         Ok(())
     }
 
-    pub fn update_asset_authorization(&self, id: &str, authorized: bool, authorized_by: Option<String>) -> Result<()> {
+    pub fn delete_asset(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM assets WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_asset_authorization(
+        &self,
+        id: &str,
+        authorized: bool,
+        authorized_by: Option<String>,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -241,13 +323,205 @@ impl DatabaseManager {
                 id
             ],
         )?;
+
+        // Also update scope passive_only flag
+        conn.execute(
+            "UPDATE scopes SET passive_only = ?1 WHERE asset_id = ?2",
+            params![if authorized { 0 } else { 1 }, id],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn get_scope(&self, asset_id: &str) -> Result<Option<Scope>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, asset_id, allowed_paths, excluded_paths, max_rate, passive_only, created_at FROM scopes WHERE asset_id = ?1",
+        )?;
+
+        let mut rows = stmt.query(params![asset_id])?;
+        if let Some(row) = rows.next()? {
+            let passive_int: i64 = row.get(5)?;
+            Ok(Some(Scope {
+                id: row.get(0)?,
+                asset_id: row.get(1)?,
+                allowed_paths: row.get(2)?,
+                excluded_paths: row.get(3)?,
+                max_rate: row.get(4)?,
+                passive_only: passive_int == 1,
+                created_at: row.get(6)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn update_scope(&self, scope: &Scope) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO scopes (id, asset_id, allowed_paths, excluded_paths, max_rate, passive_only, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET allowed_paths = ?3, excluded_paths = ?4, max_rate = ?5, passive_only = ?6",
+            params![
+                scope.id,
+                scope.asset_id,
+                scope.allowed_paths,
+                scope.excluded_paths,
+                scope.max_rate,
+                if scope.passive_only { 1 } else { 0 },
+                scope.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_exclusions(&self, asset_id: &str) -> Result<Vec<ScopeExclusion>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, asset_id, pattern, exclusion_type, reason, created_at FROM scope_exclusions WHERE asset_id = ?1 ORDER BY created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![asset_id], |row| {
+            Ok(ScopeExclusion {
+                id: row.get(0)?,
+                asset_id: row.get(1)?,
+                pattern: row.get(2)?,
+                exclusion_type: row.get(3)?,
+                reason: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+
+        let mut exclusions = Vec::new();
+        for r in rows {
+            exclusions.push(r?);
+        }
+        Ok(exclusions)
+    }
+
+    pub fn insert_exclusion(&self, exc: &ScopeExclusion) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO scope_exclusions (id, asset_id, pattern, exclusion_type, reason, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                exc.id,
+                exc.asset_id,
+                exc.pattern,
+                exc.exclusion_type,
+                exc.reason,
+                exc.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_exclusion(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM scope_exclusions WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn check_path_in_scope(&self, asset_id: &str, path: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let exclusions: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT pattern FROM scope_exclusions WHERE asset_id = ?1 AND exclusion_type = 'path'",
+            )?;
+            let rows = stmt.query_map(params![asset_id], |r| r.get(0))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        for pattern in exclusions {
+            if path.contains(&pattern) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn list_audit_sessions(&self, asset_id: Option<&str>) -> Result<Vec<AuditSession>> {
+        let conn = self.conn.lock().unwrap();
+        let mut sessions = Vec::new();
+
+        if let Some(aid) = asset_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, asset_id, auditor_name, status, start_time, end_time, summary, findings_count, created_at FROM audit_sessions WHERE asset_id = ?1 ORDER BY created_at DESC",
+            )?;
+            let rows = stmt.query_map(params![aid], |row| {
+                Ok(AuditSession {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    asset_id: row.get(2)?,
+                    auditor_name: row.get(3)?,
+                    status: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    summary: row.get(7)?,
+                    findings_count: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?;
+            for r in rows {
+                sessions.push(r?);
+            }
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, asset_id, auditor_name, status, start_time, end_time, summary, findings_count, created_at FROM audit_sessions ORDER BY created_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(AuditSession {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    asset_id: row.get(2)?,
+                    auditor_name: row.get(3)?,
+                    status: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    summary: row.get(7)?,
+                    findings_count: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?;
+            for r in rows {
+                sessions.push(r?);
+            }
+        }
+
+        Ok(sessions)
+    }
+
+    pub fn insert_audit_session(&self, session: &AuditSession) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO audit_sessions (id, name, asset_id, auditor_name, status, start_time, end_time, summary, findings_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                session.id,
+                session.name,
+                session.asset_id,
+                session.auditor_name,
+                session.status,
+                session.start_time,
+                session.end_time,
+                session.summary,
+                session.findings_count,
+                session.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn close_audit_session(&self, id: &str, summary: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE audit_sessions SET status = 'completed', end_time = ?1, summary = COALESCE(?2, summary) WHERE id = ?3",
+            params![now, summary, id],
+        )?;
         Ok(())
     }
 
     pub fn list_vulnerabilities(&self) -> Result<Vec<Vulnerability>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at FROM vulnerabilities ORDER BY created_at DESC"
+            "SELECT id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at FROM vulnerabilities ORDER BY created_at DESC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -314,7 +588,7 @@ impl DatabaseManager {
     pub fn list_audit_logs(&self) -> Result<Vec<AuditLog>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, timestamp, actor, action, target, details_json, status FROM audit_logs ORDER BY timestamp DESC LIMIT 100"
+            "SELECT id, timestamp, actor, action, target, details_json, status FROM audit_logs ORDER BY timestamp DESC LIMIT 200",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -356,7 +630,7 @@ impl DatabaseManager {
     pub fn list_scans(&self) -> Result<Vec<Scan>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, asset_id, scan_mode, status, progress, started_at, completed_at, error_message, config_json, created_at FROM scans ORDER BY created_at DESC"
+            "SELECT id, name, asset_id, scan_mode, status, progress, started_at, completed_at, error_message, config_json, created_at FROM scans ORDER BY created_at DESC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -428,6 +702,8 @@ mod tests {
         let stats = db.get_dashboard_stats().expect("Should get stats");
         assert_eq!(stats.total_assets, 0);
         assert_eq!(stats.authorized_assets, 0);
+        assert_eq!(stats.active_sessions, 0);
+        assert_eq!(stats.total_exclusions, 0);
     }
 
     #[test]
@@ -451,24 +727,32 @@ mod tests {
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].authorized, false);
 
+        // Check automatically created scope
+        let scope = db.get_scope("test-asset-1").expect("Should query scope");
+        assert!(scope.is_some());
+        assert_eq!(scope.unwrap().passive_only, true);
+
         // Sign authorization
         db.update_asset_authorization("test-asset-1", true, Some("Auditor X".to_string()))
             .expect("Should update authorization");
         let updated = db.list_assets().expect("Should list assets");
         assert_eq!(updated[0].authorized, true);
         assert_eq!(updated[0].authorized_by, Some("Auditor X".to_string()));
+
+        let scope_updated = db.get_scope("test-asset-1").expect("Should query scope");
+        assert_eq!(scope_updated.unwrap().passive_only, false);
     }
 
     #[test]
-    fn test_vulnerability_and_audit_logging() {
+    fn test_scope_exclusions_and_compliance() {
         let db = DatabaseManager::new_in_memory().expect("Should initialize in-memory DB");
         let asset = Asset {
-            id: "asset-vuln-1".to_string(),
-            name: "Target".to_string(),
-            target: "https://vuln.local".to_string(),
+            id: "ast-exc-1".to_string(),
+            name: "Portal".to_string(),
+            target: "https://portal.local".to_string(),
             asset_type: "url".to_string(),
             authorized: true,
-            authorized_by: Some("Auditor".to_string()),
+            authorized_by: Some("Lead".to_string()),
             authorized_at: None,
             notes: None,
             created_at: "2026-11-01T00:00:00Z".to_string(),
@@ -476,47 +760,61 @@ mod tests {
         };
         db.insert_asset(&asset).unwrap();
 
-        let scan = Scan {
-            id: "scan-1".to_string(),
-            name: "Initial Scan".to_string(),
-            asset_id: "asset-vuln-1".to_string(),
-            scan_mode: "active".to_string(),
-            status: "completed".to_string(),
-            progress: 100.0,
-            started_at: None,
-            completed_at: None,
-            error_message: None,
-            config_json: "{}".to_string(),
+        let exc = ScopeExclusion {
+            id: "exc-1".to_string(),
+            asset_id: "ast-exc-1".to_string(),
+            pattern: "/admin/billing".to_string(),
+            exclusion_type: "path".to_string(),
+            reason: "Critical production billing endpoint".to_string(),
             created_at: "2026-11-01T00:00:00Z".to_string(),
         };
-        db.insert_scan(&scan).unwrap();
+        db.insert_exclusion(&exc).expect("Should insert exclusion");
 
-        let vuln = Vulnerability {
-            id: "v-1".to_string(),
-            scan_id: "scan-1".to_string(),
-            asset_id: "asset-vuln-1".to_string(),
-            title: "Differential XSS".to_string(),
-            category: "Web Security".to_string(),
-            attack_type: "xss".to_string(),
-            vector: "query".to_string(),
-            severity: "high".to_string(),
-            confidence: 90,
-            cve: None,
-            cwe: Some("CWE-79".to_string()),
-            owasp: Some("A03:2021".to_string()),
-            cvss_score: Some(7.5),
-            description: Some("Contextual unescaped reflection".to_string()),
-            evidence_json: "{}".to_string(),
-            remediation: Some("Encode output".to_string()),
-            verified: true,
-            status: "open".to_string(),
+        let in_scope = db.check_path_in_scope("ast-exc-1", "/public/catalog").unwrap();
+        assert_eq!(in_scope, true);
+
+        let excluded = db.check_path_in_scope("ast-exc-1", "/admin/billing/checkout").unwrap();
+        assert_eq!(excluded, false);
+    }
+
+    #[test]
+    fn test_audit_sessions_lifecycle() {
+        let db = DatabaseManager::new_in_memory().expect("Should initialize in-memory DB");
+        let asset = Asset {
+            id: "ast-sess-1".to_string(),
+            name: "Internal API".to_string(),
+            target: "https://api.internal.local".to_string(),
+            asset_type: "url".to_string(),
+            authorized: true,
+            authorized_by: Some("Lead".to_string()),
+            authorized_at: None,
+            notes: None,
             created_at: "2026-11-01T00:00:00Z".to_string(),
+            updated_at: "2026-11-01T00:00:00Z".to_string(),
         };
-        db.insert_vulnerability(&vuln).unwrap();
+        db.insert_asset(&asset).unwrap();
 
-        let vulns = db.list_vulnerabilities().unwrap();
-        assert_eq!(vulns.len(), 1);
-        assert_eq!(vulns[0].title, "Differential XSS");
-        assert_eq!(vulns[0].verified, true);
+        let session = AuditSession {
+            id: "sess-1".to_string(),
+            name: "Q4 External Assessment".to_string(),
+            asset_id: "ast-sess-1".to_string(),
+            auditor_name: "Auditor Jane".to_string(),
+            status: "active".to_string(),
+            start_time: "2026-11-01T08:00:00Z".to_string(),
+            end_time: None,
+            summary: None,
+            findings_count: 0,
+            created_at: "2026-11-01T08:00:00Z".to_string(),
+        };
+        db.insert_audit_session(&session).unwrap();
+
+        let active_sessions = db.list_audit_sessions(None).unwrap();
+        assert_eq!(active_sessions.len(), 1);
+        assert_eq!(active_sessions[0].status, "active");
+
+        db.close_audit_session("sess-1", Some("Assessment completed cleanly with 0 crashes.")).unwrap();
+        let closed = db.list_audit_sessions(None).unwrap();
+        assert_eq!(closed[0].status, "completed");
+        assert!(closed[0].end_time.is_some());
     }
 }
