@@ -3,9 +3,10 @@ pub mod db;
 
 use commands::AppState;
 use db::DatabaseManager;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub fn run() {
@@ -27,6 +28,7 @@ pub fn run() {
 
             app.manage(AppState {
                 db: Arc::new(db_manager),
+                running_processes: Arc::new(Mutex::new(HashMap::new())),
             });
 
             log::info!("SECMASTER database and scope subsystems initialized.");

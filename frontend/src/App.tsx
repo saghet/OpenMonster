@@ -61,6 +61,25 @@ export const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+    api.onScanEvent((event: any) => {
+      if (event.type === 'finding') {
+        loadData();
+      } else if (event.type === 'completed' || event.type === 'error') {
+        setIsScanning(false);
+        setActiveScanId(null);
+        loadData();
+      }
+    }).then((fn) => {
+      unlistenFn = fn;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, [loadData]);
+
   const handleAddAsset = async (
     name: string,
     target: string,
@@ -85,18 +104,14 @@ export const App: React.FC = () => {
     await loadData();
   };
 
-  const handleLaunchScan = async (_assetId: string, _name: string, _vectors: string[]) => {
+  const handleLaunchScan = async (assetId: string, name: string, vectors: string[]) => {
     setIsScanning(true);
     try {
-      // In web fallback, simulate scan progress
-      setActiveScanId(`scn-${Date.now()}`);
-      setTimeout(async () => {
-        setIsScanning(false);
-        setActiveScanId(null);
-        await loadData();
-      }, 3500);
-    } catch (err) {
+      const scan = await api.createScan(name, assetId, 'active', vectors, 20);
+      setActiveScanId(scan.id);
+    } catch (err: unknown) {
       console.error('Error starting scan:', err);
+      alert(err instanceof Error ? err.message : String(err));
       setIsScanning(false);
     }
   };

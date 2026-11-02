@@ -447,6 +447,58 @@ export const api = {
     }
   },
 
+  async createScan(
+    name: string,
+    assetId: string,
+    scanMode: string,
+    vectors?: string[],
+    rateLimit?: number
+  ): Promise<Scan> {
+    try {
+      return await tauriInvoke<Scan>('create_scan', {
+        req: {
+          name,
+          asset_id: assetId,
+          scan_mode: scanMode,
+          vectors,
+          rate_limit: rateLimit,
+        },
+      });
+    } catch (err) {
+      console.warn('Falling back to local simulated scan in browser preview mode:', err);
+      const scans = await this.getScans();
+      const newScan: Scan = {
+        id: `scn-${Date.now()}`,
+        name,
+        asset_id: assetId,
+        scan_mode: scanMode as 'passive' | 'active',
+        status: 'running',
+        progress: 0.0,
+        started_at: new Date().toISOString(),
+        config_json: JSON.stringify({ vectors, rateLimit }),
+        created_at: new Date().toISOString(),
+      };
+      scans.unshift(newScan);
+      localStorage.setItem(MOCK_STORAGE_KEY_SCANS, JSON.stringify(scans));
+      return newScan;
+    }
+  },
+
+  async onScanEvent(callback: (event: any) => void): Promise<() => void> {
+    if (isTauri) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen('scan-event', (e) => {
+          callback(e.payload);
+        });
+        return unlisten;
+      } catch (err) {
+        console.error('Failed to attach Tauri event listener:', err);
+      }
+    }
+    return () => {};
+  },
+
   async cancelScan(scanId: string): Promise<void> {
     try {
       await tauriInvoke('cancel_scan', { scanId });

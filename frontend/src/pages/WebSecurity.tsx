@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Globe,
   Play,
@@ -11,6 +11,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Asset } from '../types';
+import { api } from '../services/api';
 
 interface WebSecurityProps {
   selectedAsset: Asset | null;
@@ -37,6 +38,37 @@ export const WebSecurity: React.FC<WebSecurityProps> = ({
     '[VERIF] Módulo diferencial activo: Eliminación de falsos positivos en SSTI/XSS habilitada.',
     '[SCOPE] Esperando confirmación de alcance del objetivo.',
   ]);
+
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+    api.onScanEvent((event: any) => {
+      if (event.type === 'log') {
+        const msg = event.data?.message || '';
+        const level = event.data?.level || 'INFO';
+        setLogs((prev) => [...prev, `[${level}] ${msg}`]);
+      } else if (event.type === 'progress') {
+        const pct = Math.round(event.data?.percent || 0);
+        const task = event.data?.current_task || '';
+        setLogs((prev) => [...prev, `[PROG ${pct}%] ${task}`]);
+      } else if (event.type === 'finding') {
+        const title = event.data?.title || '';
+        const sev = (event.data?.severity || 'info').toUpperCase();
+        setLogs((prev) => [...prev, `[VULN DETECTADA - ${sev}] ${title}`]);
+      } else if (event.type === 'completed') {
+        const total = event.data?.total_findings || 0;
+        setLogs((prev) => [...prev, `[COMPLETED] Auditoría finalizada con ${total} hallazgos.`]);
+      } else if (event.type === 'error') {
+        const err = event.data?.message || '';
+        setLogs((prev) => [...prev, `[ERROR] ${err}`]);
+      }
+    }).then((fn) => {
+      unlistenFn = fn;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
 
   const toggleVector = (v: string) => {
     setSelectedVectors((prev) =>
