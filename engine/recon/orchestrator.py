@@ -139,7 +139,7 @@ class ReconOrchestrator:
             try:
                 from engine.recon.http_engine import HttpIntelligenceEngine
                 http_engine = HttpIntelligenceEngine(self.target, self.emitter)
-                fps = http_engine.run()
+                fps = http_engine.run(subdomains=result.subdomains)
                 for fp in fps:
                     result.http_fingerprints.append(fp)
                     self.emit_event("recon_http", fp.to_dict())

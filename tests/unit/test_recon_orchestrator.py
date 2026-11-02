@@ -71,9 +71,12 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertTrue(len(res.errors) > 0)
         self.assertIn("authorized whitelist", res.errors[0])
 
+    @patch("engine.recon.http_engine.HttpIntelligenceEngine.run")
     @patch("engine.recon.dns_engine.DnsIntelligenceEngine.run")
     @patch("engine.recon.passive.PassiveReconEngine.run")
-    def test_orchestrator_skeleton_execution(self, mock_passive_run, mock_dns_run):
+    def test_orchestrator_skeleton_execution(
+        self, mock_passive_run, mock_dns_run, mock_http_run
+    ):
         mock_passive_run.return_value = [
             SubdomainResult(
                 subdomain="dev.example.com",
@@ -90,6 +93,15 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
                 record_value="93.184.216.34",
             )
         ]
+        mock_http_run.return_value = [
+            HttpFingerprintResult(
+                target_url="https://example.com",
+                status_code=200,
+                server_header="cloudflare",
+                title="Example Domain",
+                tls_version="TLSv1.3",
+            )
+        ]
         orch = ReconOrchestrator(
             target="https://example.com",
             asset_id="ast-1",
@@ -102,6 +114,7 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertEqual(len(res.subdomains), 1)
         self.assertEqual(res.subdomains[0].subdomain, "dev.example.com")
         self.assertEqual(len(res.dns_records), 1)
+        self.assertEqual(len(res.http_fingerprints), 1)
 
 
 if __name__ == "__main__":
