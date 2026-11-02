@@ -91,3 +91,53 @@ class ReconResult:
             "execution_time_seconds": self.execution_time_seconds,
             "errors": self.errors,
         }
+
+
+@dataclass
+class CorrelatedAssetNode:
+    domain: str
+    is_root: bool = False
+    ips: List[str] = field(default_factory=list)
+    dns_records: List[Dict[str, Any]] = field(default_factory=list)
+    technologies: List[Dict[str, Any]] = field(default_factory=list)
+    http_status: Optional[int] = None
+    title: Optional[str] = None
+    server_header: Optional[str] = None
+    tls_info: Optional[Dict[str, Any]] = None
+    takeover_risks: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AttackSurfaceGraph:
+    root_domain: str
+    nodes: List[CorrelatedAssetNode] = field(default_factory=list)
+    ip_clusters: Dict[str, List[str]] = field(default_factory=dict)
+    technology_clusters: Dict[str, List[str]] = field(default_factory=dict)
+    takeover_candidates: List[Dict[str, Any]] = field(default_factory=list)
+    unresolved_subdomains: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "root_domain": self.root_domain,
+            "nodes": [n.to_dict() for n in self.nodes],
+            "ip_clusters": self.ip_clusters,
+            "technology_clusters": self.technology_clusters,
+            "takeover_candidates": self.takeover_candidates,
+            "unresolved_subdomains": self.unresolved_subdomains,
+        }
+
+
+@dataclass
+class ReconDiffResult:
+    new_subdomains: List[str] = field(default_factory=list)
+    removed_subdomains: List[str] = field(default_factory=list)
+    changed_ips: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
+    new_technologies: List[Dict[str, str]] = field(default_factory=list)
+    removed_technologies: List[Dict[str, str]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)

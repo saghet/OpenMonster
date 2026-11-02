@@ -165,6 +165,16 @@ class ReconOrchestrator:
                 self.emit_event("log", {"message": f"Error en Technology Fingerprinting: {e}", "level": "WARNING"})
                 result.errors.append(f"TechFingerprinting: {e}")
 
+        # 6. Engine E: Intelligence Correlation & Topology Graph
+        if running:
+            try:
+                from engine.recon.correlation import IntelligenceCorrelationEngine
+                correlation_engine = IntelligenceCorrelationEngine(result, self.emitter)
+                topology = correlation_engine.build_surface_topology()
+                self.emit_event("recon_topology", topology.to_dict())
+            except Exception as e:
+                self.emit_event("log", {"message": f"Error en Intelligence Correlation: {e}", "level": "WARNING"})
+
         result.execution_time_seconds = time.time() - start_time
         self.emit_event("progress", {"percent": 100.0, "message": "Auditoría de reconocimiento completada."})
         self.emit_event(
