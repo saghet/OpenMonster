@@ -15,6 +15,7 @@ class SubdomainResult:
     confidence: int = 80
     is_live: bool = False
     http_status: Optional[int] = None
+    tags: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

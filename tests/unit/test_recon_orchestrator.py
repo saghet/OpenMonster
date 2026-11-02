@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+
 from engine.recon.contracts import (
     DnsRecordResult,
     HttpFingerprintResult,
@@ -69,7 +71,17 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertTrue(len(res.errors) > 0)
         self.assertIn("authorized whitelist", res.errors[0])
 
-    def test_orchestrator_skeleton_execution(self):
+    @patch("engine.recon.passive.PassiveReconEngine.run")
+    def test_orchestrator_skeleton_execution(self, mock_passive_run):
+        mock_passive_run.return_value = [
+            SubdomainResult(
+                subdomain="dev.example.com",
+                ip_addresses=[],
+                source="crt.sh",
+                confidence=85,
+                tags=["environment:development"],
+            )
+        ]
         orch = ReconOrchestrator(
             target="https://example.com",
             asset_id="ast-1",
@@ -79,6 +91,8 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         res = orch.run()
         self.assertEqual(res.target_domain, "example.com")
         self.assertEqual(len(res.errors), 0)
+        self.assertEqual(len(res.subdomains), 1)
+        self.assertEqual(res.subdomains[0].subdomain, "dev.example.com")
 
 
 if __name__ == "__main__":
