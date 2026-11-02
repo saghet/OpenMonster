@@ -71,8 +71,9 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertTrue(len(res.errors) > 0)
         self.assertIn("authorized whitelist", res.errors[0])
 
+    @patch("engine.recon.dns_engine.DnsIntelligenceEngine.run")
     @patch("engine.recon.passive.PassiveReconEngine.run")
-    def test_orchestrator_skeleton_execution(self, mock_passive_run):
+    def test_orchestrator_skeleton_execution(self, mock_passive_run, mock_dns_run):
         mock_passive_run.return_value = [
             SubdomainResult(
                 subdomain="dev.example.com",
@@ -80,6 +81,13 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
                 source="crt.sh",
                 confidence=85,
                 tags=["environment:development"],
+            )
+        ]
+        mock_dns_run.return_value = [
+            DnsRecordResult(
+                domain="example.com",
+                record_type="A",
+                record_value="93.184.216.34",
             )
         ]
         orch = ReconOrchestrator(
@@ -93,6 +101,7 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertEqual(len(res.errors), 0)
         self.assertEqual(len(res.subdomains), 1)
         self.assertEqual(res.subdomains[0].subdomain, "dev.example.com")
+        self.assertEqual(len(res.dns_records), 1)
 
 
 if __name__ == "__main__":

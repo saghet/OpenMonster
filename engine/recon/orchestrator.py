@@ -123,7 +123,7 @@ class ReconOrchestrator:
             try:
                 from engine.recon.dns_engine import DnsIntelligenceEngine
                 dns_engine = DnsIntelligenceEngine(self.target_domain, self.emitter)
-                records = dns_engine.run()
+                records = dns_engine.run(subdomains=result.subdomains)
                 for r in records:
                     result.dns_records.append(r)
                     self.emit_event("recon_dns", r.to_dict())
