@@ -7,6 +7,9 @@ import { WebSecurity } from './pages/WebSecurity';
 import { VulnerabilityManagement } from './pages/VulnerabilityManagement';
 import { Reports } from './pages/Reports';
 import { AuditLogs } from './pages/AuditLogs';
+import { PluginManager } from './pages/PluginManager';
+import { AISecurityAssistant } from './pages/AISecurityAssistant';
+import { SettingsDiagnostics } from './pages/SettingsDiagnostics';
 import { ExperimentalModule } from './pages/ExperimentalModule';
 import { Asset, AuditLog, DashboardStats, ModuleId, Vulnerability } from './types';
 import { api } from './services/api';
@@ -187,6 +190,14 @@ export const App: React.FC = () => {
 
           {activeModule === 'audit-logs' && <AuditLogs logs={auditLogs} assets={assets} />}
 
+          {activeModule === 'plugin-manager' && <PluginManager />}
+
+          {activeModule === 'ai-security' && (
+            <AISecurityAssistant vulnerabilities={vulnerabilities} />
+          )}
+
+          {activeModule === 'settings' && <SettingsDiagnostics />}
+
           {/* Fallback for all other experimental or pending modules */}
           {![
             'dashboard',
@@ -195,6 +206,9 @@ export const App: React.FC = () => {
             'vulnerability-management',
             'reports',
             'audit-logs',
+            'plugin-manager',
+            'ai-security',
+            'settings',
           ].includes(activeModule) && <ExperimentalModule module={currentModuleItem} />}
         </main>
       </div>

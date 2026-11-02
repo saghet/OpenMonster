@@ -543,3 +543,204 @@ pub async fn cancel_scan(scan_id: String, state: State<'_, AppState>) -> Result<
 
     Ok(())
 }
+
+fn get_cli_path() -> std::path::PathBuf {
+    let p1 = std::path::PathBuf::from("engine/cli.py");
+    if p1.exists() {
+        return p1;
+    }
+    let p2 = std::path::PathBuf::from("../engine/cli.py");
+    if p2.exists() {
+        return p2;
+    }
+    p1
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PluginItem {
+    pub plugin_id: String,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub license: String,
+    pub category: String,
+    pub description: String,
+    pub entrypoint: String,
+    pub permissions: Vec<String>,
+    pub dependencies: Vec<String>,
+    pub risk_level: String,
+    pub cwe: Option<String>,
+    pub owasp: Option<String>,
+    pub integrity_hash: Option<String>,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub async fn list_plugins() -> Result<Vec<PluginItem>, String> {
+    let cli = get_cli_path();
+    let output = Command::new("python3")
+        .arg(&cli)
+        .arg("plugins")
+        .arg("list")
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute plugin discovery: {}", e))?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Plugin discovery error: {}", err_msg));
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let plugins: Vec<PluginItem> = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse plugin json: {} (Output: {})", e, stdout_str))?;
+
+    Ok(plugins)
+}
+
+#[tauri::command]
+pub async fn toggle_plugin(plugin_id: String, enabled: bool) -> Result<bool, String> {
+    let cli = get_cli_path();
+    let enable_str = if enabled { "true" } else { "false" };
+    let output = Command::new("python3")
+        .arg(&cli)
+        .arg("plugins")
+        .arg("toggle")
+        .arg(&plugin_id)
+        .arg(enable_str)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to toggle plugin: {}", e))?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Plugin toggle error: {}", err_msg));
+    }
+
+    Ok(enabled)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaStatusResponse {
+    pub available: bool,
+    pub models: Vec<String>,
+    pub error_message: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_ollama_status() -> Result<OllamaStatusResponse, String> {
+    let cli = get_cli_path();
+    let output = Command::new("python3")
+        .arg(&cli)
+        .arg("ollama")
+        .arg("status")
+        .output()
+        .await
+        .map_err(|e| format!("Failed to query Ollama daemon: {}", e))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let status: OllamaStatusResponse = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse Ollama status: {} (Raw: {})", e, stdout_str))?;
+
+    Ok(status)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExplainVulnRequest {
+    pub title: String,
+    pub category: String,
+    pub severity: String,
+    pub cwe: Option<String>,
+    pub description: Option<String>,
+    pub evidence: Option<String>,
+    pub model: Option<String>,
+}
+
+#[tauri::command]
+pub async fn explain_vulnerability_ai(req: ExplainVulnRequest) -> Result<serde_json::Value, String> {
+    let cli = get_cli_path();
+    let mut cmd = Command::new("python3");
+    cmd.arg(&cli)
+        .arg("ollama")
+        .arg("explain")
+        .arg("--title")
+        .arg(&req.title)
+        .arg("--category")
+        .arg(&req.category)
+        .arg("--severity")
+        .arg(&req.severity)
+        .arg("--cwe")
+        .arg(req.cwe.as_deref().unwrap_or(""))
+        .arg("--description")
+        .arg(req.description.as_deref().unwrap_or(""))
+        .arg("--evidence")
+        .arg(req.evidence.as_deref().unwrap_or("{}"));
+
+    if let Some(m) = req.model {
+        if !m.is_empty() {
+            cmd.arg("--model").arg(m);
+        }
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to query AI assistant: {}", e))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let res: serde_json::Value = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse AI response: {} (Raw: {})", e, stdout_str))?;
+
+    Ok(res)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrioritizeRequest {
+    pub findings_json: String,
+    pub model: Option<String>,
+}
+
+#[tauri::command]
+pub async fn prioritize_vulnerabilities_ai(req: PrioritizeRequest) -> Result<serde_json::Value, String> {
+    let cli = get_cli_path();
+    let mut cmd = Command::new("python3");
+    cmd.arg(&cli)
+        .arg("ollama")
+        .arg("prioritize")
+        .arg("--findings")
+        .arg(&req.findings_json);
+
+    if let Some(m) = req.model {
+        if !m.is_empty() {
+            cmd.arg("--model").arg(m);
+        }
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to query AI prioritization: {}", e))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let res: serde_json::Value = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse AI prioritization: {} (Raw: {})", e, stdout_str))?;
+
+    Ok(res)
+}
+
+#[tauri::command]
+pub async fn get_system_diagnostics() -> Result<serde_json::Value, String> {
+    let cli = get_cli_path();
+    let output = Command::new("python3")
+        .arg(&cli)
+        .arg("diagnose")
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute local diagnostics: {}", e))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let res: serde_json::Value = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse diagnostics JSON: {} (Raw: {})", e, stdout_str))?;
+
+    Ok(res)
+}

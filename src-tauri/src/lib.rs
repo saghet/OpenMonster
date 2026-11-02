@@ -54,7 +54,13 @@ pub fn run() {
             commands::get_audit_logs,
             commands::get_scans,
             commands::create_scan,
-            commands::cancel_scan
+            commands::cancel_scan,
+            commands::list_plugins,
+            commands::toggle_plugin,
+            commands::check_ollama_status,
+            commands::explain_vulnerability_ai,
+            commands::prioritize_vulnerabilities_ai,
+            commands::get_system_diagnostics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,21 @@
+{
+  "plugin_id": "cors-misconfig-scanner",
+  "name": "CORS Misconfiguration Auditor",
+  "version": "1.0.0",
+  "author": "SECMASTER Security Core Team",
+  "license": "GPL-3.0",
+  "category": "Web Security",
+  "description": "Audita políticas Cross-Origin Resource Sharing (CORS) en busca de orígenes arbitrarios reflejados con credenciales y comodines permisivos.",
+  "entrypoint": "plugin.py",
+  "permissions": [
+    "network:http_probe"
+  ],
+  "dependencies": [
+    "requests"
+  ],
+  "risk_level": "high",
+  "cwe": "CWE-942",
+  "owasp": "A01:2021 - Broken Access Control",
+  "integrity_hash": "1224b48588adb632d79473e8a156e93aa4eae775ce55bdd8bdace3e36cade741",
+  "enabled": true
+}

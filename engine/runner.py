@@ -99,6 +99,18 @@ def main():
 
     active_scanners = [s for s in all_scanners if s[0] in selected_vector_ids or "all" in selected_vector_ids]
 
+    # Discover and include enabled plugins
+    from engine.plugins.manager import PluginManager
+    try:
+        pm = PluginManager()
+        for manifest in pm.discover_plugins():
+            if manifest.enabled and ("all" in selected_vector_ids or "plugins" in selected_vector_ids or manifest.plugin_id in selected_vector_ids):
+                plugin_instance = pm.load_plugin_instance(pm.plugins_dir / manifest.plugin_id, manifest)
+                if plugin_instance:
+                    active_scanners.append((manifest.plugin_id, plugin_instance))
+    except Exception as e:
+        emitter.log(f"Advertencia al cargar subsistema de plugins: {e}", level="DEBUG")
+
     total_scanners = len(active_scanners)
     total_findings_count = 0
 

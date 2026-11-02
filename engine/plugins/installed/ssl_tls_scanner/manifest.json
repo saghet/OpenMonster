@@ -1,0 +1,22 @@
+{
+  "plugin_id": "ssl-tls-auditor",
+  "name": "SSL/TLS Security Auditor",
+  "version": "1.0.0",
+  "author": "SECMASTER Security Core Team",
+  "license": "GPL-3.0",
+  "category": "Network Security",
+  "description": "Inspecciona el apretón de manos TLS, validez de certificados X.509, fechas de vencimiento y confianza de la cadena de certificación.",
+  "entrypoint": "plugin.py",
+  "permissions": [
+    "network:tls_probe"
+  ],
+  "dependencies": [
+    "ssl",
+    "socket"
+  ],
+  "risk_level": "medium",
+  "cwe": "CWE-295",
+  "owasp": "A02:2021 - Cryptographic Failures",
+  "integrity_hash": "6363f906c7df79907b61b77acff41af0ebe8ba08563992b3a4317b13ea37c63c",
+  "enabled": true
+}

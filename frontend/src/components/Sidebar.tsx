@@ -43,7 +43,7 @@ export const MODULES: ModuleItem[] = [
   { id: 'cloud-security', name: 'Cloud Security', category: 'infrastructure', status: 'experimental', description: 'Metadata service exposure (AWS, GCP, Azure)' },
   { id: 'container-security', name: 'Container Security', category: 'infrastructure', status: 'pending', description: 'Docker socket exposure & image misconfigurations' },
   { id: 'kubernetes-security', name: 'Kubernetes Security', category: 'infrastructure', status: 'pending', description: 'API secrets exposure & RBAC evaluation' },
-  { id: 'ai-security', name: 'AI Security', category: 'infrastructure', status: 'experimental', description: 'Prompt injection & insecure output detection' },
+  { id: 'ai-security', name: 'AI Security & Assistant', category: 'infrastructure', status: 'verified', description: 'Air-gapped local Ollama assistant, risk prioritization & code audit' },
 
   // GOVERNANCE & REMEDIATION
   { id: 'vulnerability-management', name: 'Vulnerability Mgmt', category: 'governance', status: 'verified', description: 'CVE/CWE mapping, deduplication & remediation' },

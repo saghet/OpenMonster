@@ -53,6 +53,53 @@ export interface UpdateVulnStatusRequest {
   actor: string;
 }
 
+export interface PluginItem {
+  plugin_id: string;
+  name: string;
+  version: string;
+  author: string;
+  license: string;
+  category: string;
+  description: string;
+  entrypoint: string;
+  permissions: string[];
+  dependencies: string[];
+  risk_level: string;
+  cwe?: string;
+  owasp?: string;
+  integrity_hash?: string;
+  enabled: boolean;
+}
+
+export interface OllamaStatus {
+  available: boolean;
+  models: string[];
+  error_message?: string;
+}
+
+export interface SystemDiagnosticsData {
+  timestamp: string;
+  platform_info: Record<string, string>;
+  python_env: Record<string, unknown>;
+  database_health: Record<string, unknown>;
+  core_modules_status: Record<string, boolean>;
+  plugins_status: Array<{
+    plugin_id: string;
+    name: string;
+    version: string;
+    integrity_hash?: string;
+    enabled: boolean;
+    permissions: string[];
+  }>;
+  ollama_status: {
+    available: boolean;
+    installed_models: string[];
+    error_message?: string;
+  };
+  telemetry_policy: Record<string, unknown>;
+  overall_status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+}
+
 export interface Scan {
   id: string;
   name: string;

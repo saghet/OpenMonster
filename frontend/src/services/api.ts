@@ -1,4 +1,17 @@
-import { Asset, AuditLog, AuditSession, DashboardStats, RemediationDiff, Scan, Scope, ScopeExclusion, Vulnerability } from '../types';
+import {
+  Asset,
+  AuditLog,
+  AuditSession,
+  DashboardStats,
+  OllamaStatus,
+  PluginItem,
+  RemediationDiff,
+  Scan,
+  Scope,
+  ScopeExclusion,
+  SystemDiagnosticsData,
+  Vulnerability
+} from '../types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -551,6 +564,149 @@ export const api = {
         s.progress = 100;
         localStorage.setItem(MOCK_STORAGE_KEY_SCANS, JSON.stringify(scans));
       }
+    }
+  },
+
+  async listPlugins(): Promise<PluginItem[]> {
+    try {
+      return await tauriInvoke<PluginItem[]>('list_plugins');
+    } catch {
+      return [
+        {
+          plugin_id: 'cors-misconfig-scanner',
+          name: 'CORS Misconfiguration Auditor',
+          version: '1.0.0',
+          author: 'SECMASTER Security Core Team',
+          license: 'GPL-3.0',
+          category: 'Web Security',
+          description: 'Audita políticas Cross-Origin Resource Sharing (CORS) en busca de orígenes arbitrarios reflejados con credenciales y comodines permisivos.',
+          entrypoint: 'plugin.py',
+          permissions: ['network:http_probe'],
+          dependencies: ['requests'],
+          risk_level: 'high',
+          cwe: 'CWE-942',
+          owasp: 'A01:2021 - Broken Access Control',
+          integrity_hash: '1224b48588adb632d79473e8a156e93aa4eae775ce55bdd8bdace3e36cade741',
+          enabled: true,
+        },
+        {
+          plugin_id: 'ssl-tls-auditor',
+          name: 'SSL/TLS Security Auditor',
+          version: '1.0.0',
+          author: 'SECMASTER Security Core Team',
+          license: 'GPL-3.0',
+          category: 'Network Security',
+          description: 'Inspecciona el apretón de manos TLS, validez de certificados X.509, fechas de vencimiento y confianza de la cadena de certificación.',
+          entrypoint: 'plugin.py',
+          permissions: ['network:tls_probe'],
+          dependencies: ['ssl', 'socket'],
+          risk_level: 'medium',
+          cwe: 'CWE-295',
+          owasp: 'A02:2021 - Cryptographic Failures',
+          integrity_hash: '6363f906c7df79907b61b77acff41af0ebe8ba08563992b3a4317b13ea37c63c',
+          enabled: true,
+        },
+      ];
+    }
+  },
+
+  async togglePlugin(pluginId: string, enabled: boolean): Promise<boolean> {
+    try {
+      return await tauriInvoke<boolean>('toggle_plugin', { pluginId, enabled });
+    } catch {
+      return enabled;
+    }
+  },
+
+  async checkOllamaStatus(): Promise<OllamaStatus> {
+    try {
+      return await tauriInvoke<OllamaStatus>('check_ollama_status');
+    } catch {
+      return {
+        available: false,
+        models: [],
+        error_message: 'Ollama no está en ejecución en 127.0.0.1:11434 (Modo sin IA activo).',
+      };
+    }
+  },
+
+  async explainVulnerabilityAI(req: {
+    title: string;
+    category: string;
+    severity: string;
+    cwe?: string;
+    description?: string;
+    evidence?: string;
+    model?: string;
+  }): Promise<{ success: boolean; response?: string; error?: string; model?: string }> {
+    try {
+      return await tauriInvoke('explain_vulnerability_ai', { req });
+    } catch (err) {
+      return {
+        success: false,
+        error: String(err),
+      };
+    }
+  },
+
+  async prioritizeVulnerabilitiesAI(
+    findingsJson: string,
+    model?: string
+  ): Promise<{ success: boolean; response?: string; error?: string; model?: string }> {
+    try {
+      return await tauriInvoke('prioritize_vulnerabilities_ai', {
+        req: { findings_json: findingsJson, model },
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: String(err),
+      };
+    }
+  },
+
+  async getSystemDiagnostics(): Promise<SystemDiagnosticsData> {
+    try {
+      return await tauriInvoke<SystemDiagnosticsData>('get_system_diagnostics');
+    } catch {
+      return {
+        timestamp: new Date().toISOString(),
+        platform_info: { system: 'Linux', machine: 'x86_64' },
+        python_env: { version: '3.14.8' },
+        database_health: { status: 'OPERATIONAL' },
+        core_modules_status: {
+          ssti_scanner: true,
+          xss_scanner: true,
+          sqli_scanner: true,
+          openredirect_scanner: true,
+          headers_scanner: true,
+        },
+        plugins_status: [
+          {
+            plugin_id: 'cors-misconfig-scanner',
+            name: 'CORS Misconfiguration Auditor',
+            version: '1.0.0',
+            enabled: true,
+            permissions: ['network:http_probe'],
+          },
+          {
+            plugin_id: 'ssl-tls-auditor',
+            name: 'SSL/TLS Security Auditor',
+            version: '1.0.0',
+            enabled: true,
+            permissions: ['network:tls_probe'],
+          },
+        ],
+        ollama_status: {
+          available: false,
+          installed_models: [],
+        },
+        telemetry_policy: {
+          external_telemetry_enabled: false,
+          compliance: 'Zero External Data Exfiltration',
+        },
+        overall_status: 'HEALTHY',
+      };
     }
   }
 };
