@@ -2,9 +2,12 @@ import {
   Asset,
   AuditLog,
   AuditSession,
+  CreateReconScanRequest,
   DashboardStats,
   OllamaStatus,
   PluginItem,
+  ReconScan,
+  ReconSummary,
   RemediationDiff,
   Scan,
   Scope,
@@ -708,7 +711,67 @@ export const api = {
         overall_status: 'HEALTHY',
       };
     }
-  }
+  },
+
+  // RECONNAISSANCE ENGINE API
+  createReconScan: async (req: CreateReconScanRequest): Promise<ReconScan> => {
+    try {
+      return await tauriInvoke<ReconScan>('create_recon_scan', {
+        assetId: req.asset_id,
+        mode: req.mode,
+        allowedTargets: req.allowed_targets,
+        passiveOnly: req.passive_only,
+        rateLimit: req.rate_limit,
+      });
+    } catch (err) {
+      if (isTauri) throw err;
+      // Dev mock fallback
+      const mockScan: ReconScan = {
+        id: `rscan-${Date.now()}`,
+        asset_id: req.asset_id,
+        status: 'completed',
+        mode: req.mode,
+        target_domain: 'example.com',
+        subdomains_count: 3,
+        dns_records_count: 5,
+        technologies_count: 2,
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      };
+      return mockScan;
+    }
+  },
+
+  cancelReconScan: async (scanId: string): Promise<void> => {
+    try {
+      await tauriInvoke('cancel_recon_scan', { scanId });
+    } catch (err) {
+      if (isTauri) throw err;
+    }
+  },
+
+  listReconScans: async (assetId?: string): Promise<ReconScan[]> => {
+    try {
+      return await tauriInvoke<ReconScan[]>('list_recon_scans', { assetId });
+    } catch (err) {
+      if (isTauri) throw err;
+      return [];
+    }
+  },
+
+  getReconSummary: async (assetId: string): Promise<ReconSummary> => {
+    try {
+      return await tauriInvoke<ReconSummary>('get_recon_summary', { assetId });
+    } catch (err) {
+      if (isTauri) throw err;
+      return {
+        subdomains: [],
+        dns_records: [],
+        technologies: [],
+        http_fingerprints: [],
+      };
+    }
+  },
 };
 
 export const apiService = api;

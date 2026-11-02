@@ -10,6 +10,7 @@ import { AuditLogs } from './pages/AuditLogs';
 import { PluginManager } from './pages/PluginManager';
 import { AISecurityAssistant } from './pages/AISecurityAssistant';
 import { SettingsDiagnostics } from './pages/SettingsDiagnostics';
+import { Reconnaissance } from './pages/Reconnaissance';
 import { ExperimentalModule } from './pages/ExperimentalModule';
 import { Asset, AuditLog, DashboardStats, ModuleId, Vulnerability } from './types';
 import { api } from './services/api';
@@ -167,6 +168,14 @@ export const App: React.FC = () => {
             />
           )}
 
+          {activeModule === 'reconnaissance' && (
+            <Reconnaissance
+              selectedAsset={selectedAsset}
+              onRefreshGlobal={loadData}
+              onNavigateToAssetDiscovery={() => setActiveModule('asset-discovery')}
+            />
+          )}
+
           {activeModule === 'web-security' && (
             <WebSecurity
               selectedAsset={selectedAsset}
@@ -202,6 +211,7 @@ export const App: React.FC = () => {
           {![
             'dashboard',
             'asset-discovery',
+            'reconnaissance',
             'web-security',
             'vulnerability-management',
             'reports',

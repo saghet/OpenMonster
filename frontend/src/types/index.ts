@@ -197,3 +197,91 @@ export interface ModuleItem {
   status: ModuleStatus;
   description: string;
 }
+
+export interface ReconScan {
+  id: string;
+  asset_id: string;
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
+  mode: 'all' | 'passive' | 'dns' | 'http' | 'tech';
+  target_domain: string;
+  subdomains_count: number;
+  dns_records_count: number;
+  technologies_count: number;
+  started_at: string;
+  completed_at?: string;
+  error_message?: string;
+}
+
+export interface ReconSubdomain {
+  id: string;
+  recon_scan_id: string;
+  asset_id: string;
+  subdomain: string;
+  ip_addresses: string;
+  source: string;
+  confidence: number;
+  is_live: boolean;
+  http_status?: number;
+  created_at: string;
+}
+
+export interface ReconDnsRecord {
+  id: string;
+  recon_scan_id: string;
+  asset_id: string;
+  domain: string;
+  record_type: string;
+  record_value: string;
+  ttl?: number;
+  is_takeover_risk: boolean;
+  takeover_reason?: string;
+  created_at: string;
+}
+
+export interface ReconTechnology {
+  id: string;
+  recon_scan_id: string;
+  asset_id: string;
+  target_url: string;
+  name: string;
+  category: string;
+  version?: string;
+  confidence: string;
+  matched_indicators_json: string;
+  created_at: string;
+}
+
+export interface ReconHttpFingerprint {
+  id: string;
+  recon_scan_id: string;
+  asset_id: string;
+  target_url: string;
+  status_code: number;
+  server_header?: string;
+  title?: string;
+  content_type?: string;
+  tls_version?: string;
+  tls_cipher?: string;
+  tls_cert_subject?: string;
+  tls_cert_issuer?: string;
+  tls_cert_days_left?: number;
+  security_headers_json: string;
+  cookies_json: string;
+  raw_headers_json: string;
+  created_at: string;
+}
+
+export interface ReconSummary {
+  subdomains: ReconSubdomain[];
+  dns_records: ReconDnsRecord[];
+  technologies: ReconTechnology[];
+  http_fingerprints: ReconHttpFingerprint[];
+}
+
+export interface CreateReconScanRequest {
+  asset_id: string;
+  mode: 'all' | 'passive' | 'dns' | 'http' | 'tech';
+  allowed_targets?: string;
+  passive_only?: boolean;
+  rate_limit?: number;
+}
