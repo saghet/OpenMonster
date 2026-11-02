@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capabilities for SECMASTER-OpenMonster","local":true,"windows":["main"],"permissions":["core:default","shell:allow-execute"]}}
+{"default":{"identifier":"default","description":"Hardened capabilities for SECMASTER-OpenMonster (Strict zero-shell from frontend)","local":true,"windows":["main"],"permissions":["core:default","core:event:default"]}}

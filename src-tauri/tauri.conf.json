@@ -22,11 +22,32 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:11434;"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": ["appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Professional Cybersecurity and Ethical Hacking Platform",
+    "longDescription": "SECMASTER-OpenMonster is a professional desktop security assessment platform for Linux with non-destructive differential verification, local SQLite storage, scope enforcement, and offline AI assistance.",
+    "copyright": "Copyright 2026 OpenMonster Contributors. GPL-3.0 License.",
+    "linux": {
+      "deb": {
+        "depends": ["python3 (>= 3.12)"],
+        "section": "net"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }
