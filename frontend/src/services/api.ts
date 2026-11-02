@@ -1,4 +1,4 @@
-import { Asset, AuditLog, AuditSession, DashboardStats, Scan, Scope, ScopeExclusion, Vulnerability } from '../types';
+import { Asset, AuditLog, AuditSession, DashboardStats, RemediationDiff, Scan, Scope, ScopeExclusion, Vulnerability } from '../types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -132,6 +132,7 @@ function getMockVulnerabilities(): Vulnerability[] {
       remediation: 'Implement contextual HTML entity encoding and define a strict Content-Security-Policy (CSP) omitting unsafe-inline.',
       verified: true,
       status: 'open',
+      occurrences: 1,
       created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
     },
     {
@@ -156,6 +157,7 @@ function getMockVulnerabilities(): Vulnerability[] {
       remediation: 'Validate destination URLs against an allowlist of relative paths or trusted company domains.',
       verified: true,
       status: 'open',
+      occurrences: 2,
       created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
     },
     {
@@ -391,6 +393,45 @@ export const api = {
     }
   },
 
+  async updateVulnerabilityStatus(
+    id: string,
+    status: 'open' | 'remediated' | 'false_positive',
+    notes?: string,
+    actor: string = 'Security Auditor'
+  ): Promise<void> {
+    try {
+      await tauriInvoke('update_vulnerability_status', {
+        req: { id, status, notes: notes || null, actor }
+      });
+    } catch {
+      const vulns = getMockVulnerabilities();
+      const v = vulns.find(item => item.id === id);
+      if (v) {
+        v.status = status;
+        if (status === 'remediated') {
+          v.remediation_notes = notes;
+          v.resolved_at = new Date().toISOString();
+        } else if (status === 'false_positive') {
+          v.false_positive_reason = notes;
+        }
+        localStorage.setItem(MOCK_STORAGE_KEY_VULNS, JSON.stringify(vulns));
+      }
+    }
+  },
+
+  async getRemediationDiff(assetId: string): Promise<RemediationDiff> {
+    try {
+      return await tauriInvoke<RemediationDiff>('get_remediation_diff', { assetId });
+    } catch {
+      const vulns = getMockVulnerabilities().filter(v => v.asset_id === assetId);
+      return {
+        new_findings: vulns.filter(v => v.status === 'open' && (v.occurrences || 1) <= 1),
+        resolved_findings: vulns.filter(v => v.status === 'remediated'),
+        persistent_findings: vulns.filter(v => v.status === 'open' && (v.occurrences || 1) > 1),
+      };
+    }
+  },
+
   async getAuditLogs(): Promise<AuditLog[]> {
     try {
       return await tauriInvoke<AuditLog[]>('get_audit_logs');
@@ -513,3 +554,5 @@ export const api = {
     }
   }
 };
+
+export const apiService = api;

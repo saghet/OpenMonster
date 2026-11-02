@@ -49,6 +49,8 @@ pub fn run() {
             commands::create_audit_session,
             commands::close_audit_session,
             commands::get_vulnerabilities,
+            commands::update_vulnerability_status,
+            commands::get_remediation_diff,
             commands::get_audit_logs,
             commands::get_scans,
             commands::create_scan,

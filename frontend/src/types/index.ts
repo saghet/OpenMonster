@@ -33,6 +33,24 @@ export interface Vulnerability {
   verified: boolean;
   status: 'open' | 'remediated' | 'false_positive';
   created_at: string;
+  fingerprint?: string;
+  false_positive_reason?: string;
+  remediation_notes?: string;
+  resolved_at?: string;
+  occurrences?: number;
+}
+
+export interface RemediationDiff {
+  new_findings: Vulnerability[];
+  resolved_findings: Vulnerability[];
+  persistent_findings: Vulnerability[];
+}
+
+export interface UpdateVulnStatusRequest {
+  id: string;
+  status: 'open' | 'remediated' | 'false_positive';
+  notes?: string;
+  actor: string;
 }
 
 export interface Scan {

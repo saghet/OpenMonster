@@ -280,6 +280,46 @@ pub async fn get_vulnerabilities(state: State<'_, AppState>) -> Result<Vec<Vulne
     state.db.list_vulnerabilities().map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateVulnStatusRequest {
+    pub id: String,
+    pub status: String,
+    pub notes: Option<String>,
+    pub actor: String,
+}
+
+#[tauri::command]
+pub async fn update_vulnerability_status(
+    req: UpdateVulnStatusRequest,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .db
+        .update_vulnerability_status(&req.id, &req.status, req.notes.as_deref(), &req.actor)
+        .map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: req.actor,
+        action: format!("UPDATE_VULN_STATUS_{}", req.status.to_uppercase()),
+        target: Some(req.id),
+        details_json: format!("{{\"notes\": \"{}\"}}", req.notes.unwrap_or_default()),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_remediation_diff(
+    asset_id: String,
+    state: State<'_, AppState>,
+) -> Result<crate::db::RemediationDiff, String> {
+    state.db.get_remediation_diff(&asset_id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_audit_logs(state: State<'_, AppState>) -> Result<Vec<AuditLog>, String> {
     state.db.list_audit_logs().map_err(|e| e.to_string())
@@ -434,8 +474,13 @@ pub async fn create_scan(
                                             verified,
                                             status: "open".to_string(),
                                             created_at: chrono::Utc::now().to_rfc3339(),
+                                            fingerprint: Some(format!("{}:{}:{}:{}", asset_id_clone, attack_type, vector, title)),
+                                            false_positive_reason: None,
+                                            remediation_notes: None,
+                                            resolved_at: None,
+                                            occurrences: 1,
                                         };
-                                        let _ = db_clone.insert_vulnerability(&vuln);
+                                        let _ = db_clone.insert_vulnerability_with_dedup(&vuln);
                                     }
                                 }
                                 "completed" => {

@@ -5,7 +5,8 @@ import {
   ShieldCheck,
   FileCode,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Globe
 } from 'lucide-react';
 import { Asset, Vulnerability } from '../types';
 
@@ -76,6 +77,102 @@ export const Reports: React.FC<ReportsProps> = ({ assets, vulnerabilities }) => 
     const a = document.createElement('a');
     a.href = url;
     a.download = `sec-master-findings-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadHTML = () => {
+    const title = `SECMASTER Security Audit Report (${reportType.toUpperCase()})`;
+    const targetDesc = targetAsset ? `${targetAsset.name} (${targetAsset.target})` : 'Todos los activos autorizados';
+    const critCount = relevantVulns.filter(v => v.severity === 'critical').length;
+    const highCount = relevantVulns.filter(v => v.severity === 'high').length;
+    const medCount = relevantVulns.filter(v => v.severity === 'medium').length;
+    const lowCount = relevantVulns.filter(v => v.severity === 'low').length;
+
+    const findingsHtml = relevantVulns.map(v => {
+      const color = v.severity === 'critical' ? '#ef4444' : v.severity === 'high' ? '#f97316' : v.severity === 'medium' ? '#eab308' : '#3b82f6';
+      let evidenceBlock = '';
+      if (reportType === 'technical') {
+        let evFormatted = v.evidence_json;
+        try {
+          evFormatted = JSON.stringify(JSON.parse(v.evidence_json), null, 2);
+        } catch {}
+        evidenceBlock = `
+          <div style="background:#070a10; padding:12px; border-radius:6px; margin-top:10px; font-family:monospace; font-size:11px; color:#00f0ff; overflow-x:auto;">
+            <strong>Evidencia Reproducible:</strong>
+            <pre style="margin:6px 0 0 0;">${evFormatted.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+          </div>
+          <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:10px; border-radius:6px; margin-top:10px; font-size:12px; color:#d1fae5;">
+            <strong>Recomendación de Mitigación:</strong> ${v.remediation || 'Aplicar codificación defensiva y sanitización.'}
+          </div>
+        `;
+      }
+      return `
+        <div style="background:#111726; border:1px solid #1f293d; border-radius:8px; padding:16px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="background:${color}22; color:${color}; border:1px solid ${color}44; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:bold; font-family:monospace; text-transform:uppercase;">${v.severity}</span>
+              <strong style="color:#f1f5f9; font-size:14px;">${v.title}</strong>
+            </div>
+            <div style="font-size:11px; font-family:monospace; color:#94a3b8;">
+              CVSS: <strong style="color:#fff;">${v.cvss_score || 'N/A'}</strong> | CWE: <strong style="color:#00f0ff;">${v.cwe || 'N/A'}</strong> | Confianza: ${v.confidence}%
+            </div>
+          </div>
+          <p style="color:#94a3b8; font-size:12px; margin:8px 0 0 0; line-height:1.5;">${v.description || 'Sin descripción.'}</p>
+          ${evidenceBlock}
+        </div>
+      `;
+    }).join('\n');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0a0d14; color: #f1f5f9; margin: 0; padding: 40px; }
+    .container { max-width: 900px; margin: 0 auto; background: #0d121f; border: 1px solid #1f293d; border-radius: 12px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .header { border-bottom: 1px solid #1f293d; padding-bottom: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .card { background: #111726; border: 1px solid #1f293d; padding: 12px; border-radius: 8px; text-align: center; }
+    .card .val { font-size: 20px; font-weight: bold; font-family: monospace; }
+    .disclaimer { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d; padding: 12px; border-radius: 8px; font-size: 12px; margin-bottom: 24px; }
+    @media print { body { background: #fff; color: #000; padding: 0; } .container { border: none; box-shadow: none; max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div style="font-size:10px; font-family:monospace; color:#00f0ff; letter-spacing:1px; font-weight:bold; text-transform:uppercase;">SECMASTER CYBERSECURITY AUDIT REPORT</div>
+        <h1 style="font-size:20px; margin:6px 0 0 0; color:#fff;">${title}</h1>
+        <p style="font-size:12px; color:#94a3b8; margin:4px 0 0 0;">Objetivo: <strong>${targetDesc}</strong></p>
+      </div>
+      <div style="font-size:11px; color:#94a3b8; text-align:right;">
+        <div>Generado: ${new Date().toISOString()}</div>
+        <div style="color:#00f0ff; margin-top:4px;">GPL-3.0 Attribution Preserved</div>
+      </div>
+    </div>
+    <div class="metrics">
+      <div class="card"><div style="font-size:10px; color:#ef4444;">CRÍTICAS</div><div class="val" style="color:#ef4444;">${critCount}</div></div>
+      <div class="card"><div style="font-size:10px; color:#f97316;">ALTAS</div><div class="val" style="color:#f97316;">${highCount}</div></div>
+      <div class="card"><div style="font-size:10px; color:#eab308;">MEDIAS</div><div class="val" style="color:#eab308;">${medCount}</div></div>
+      <div class="card"><div style="font-size:10px; color:#3b82f6;">BAJAS</div><div class="val" style="color:#3b82f6;">${lowCount}</div></div>
+    </div>
+    <div class="disclaimer">
+      <strong>Declaración de Alcance Autorizado:</strong> Este reporte refleja auditorías de seguridad realizadas bajo alcance explícito con metodología diferencial y no destructiva.
+    </div>
+    <h2 style="font-size:15px; margin-bottom:14px; color:#f1f5f9;">Hallazgos Identificados</h2>
+    ${findingsHtml || '<p style="color:#94a3b8; font-size:12px;">No se identificaron vulnerabilidades para el alcance filtrado.</p>'}
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sec-master-report-${reportType}-${Date.now()}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -153,6 +250,14 @@ export const Reports: React.FC<ReportsProps> = ({ assets, vulnerabilities }) => 
           >
             <FileSpreadsheet size={14} className="text-emerald-400" />
             CSV
+          </button>
+          <button
+            onClick={handleDownloadHTML}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#162032] border border-[#27354f] text-slate-300 hover:text-white text-xs font-medium"
+            title="Exportar HTML Standalone"
+          >
+            <Globe size={14} className="text-cyan-400" />
+            HTML
           </button>
           <button
             onClick={handlePrint}

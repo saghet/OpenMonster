@@ -174,7 +174,11 @@ export const App: React.FC = () => {
           )}
 
           {activeModule === 'vulnerability-management' && (
-            <VulnerabilityManagement vulnerabilities={vulnerabilities} />
+            <VulnerabilityManagement
+              vulnerabilities={vulnerabilities}
+              assets={assets}
+              onRefresh={loadData}
+            />
           )}
 
           {activeModule === 'reports' && (

@@ -73,6 +73,29 @@ pub struct Vulnerability {
     pub verified: bool,
     pub status: String,
     pub created_at: String,
+    pub fingerprint: Option<String>,
+    pub false_positive_reason: Option<String>,
+    pub remediation_notes: Option<String>,
+    pub resolved_at: Option<String>,
+    pub occurrences: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VulnerabilityHistory {
+    pub id: String,
+    pub vulnerability_id: String,
+    pub previous_status: String,
+    pub new_status: String,
+    pub actor: String,
+    pub notes: Option<String>,
+    pub changed_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemediationDiff {
+    pub new_findings: Vec<Vulnerability>,
+    pub resolved_findings: Vec<Vulnerability>,
+    pub persistent_findings: Vec<Vulnerability>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -145,6 +168,8 @@ impl DatabaseManager {
         conn.execute_batch(m1)?;
         let m2 = include_str!("../../database/migrations/002_phase2_scope_enhancements.sql");
         conn.execute_batch(m2)?;
+        let m3 = include_str!("../../database/migrations/003_vulnerability_dedup_and_remediation.sql");
+        conn.execute_batch(m3)?;
         Ok(())
     }
 
@@ -521,7 +546,7 @@ impl DatabaseManager {
     pub fn list_vulnerabilities(&self) -> Result<Vec<Vulnerability>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at FROM vulnerabilities ORDER BY created_at DESC",
+            "SELECT id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at, fingerprint, false_positive_reason, remediation_notes, resolved_at, occurrences FROM vulnerabilities ORDER BY created_at DESC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -546,6 +571,11 @@ impl DatabaseManager {
                 verified: verif_int == 1,
                 status: row.get(17)?,
                 created_at: row.get(18)?,
+                fingerprint: row.get(19)?,
+                false_positive_reason: row.get(20)?,
+                remediation_notes: row.get(21)?,
+                resolved_at: row.get(22)?,
+                occurrences: row.get(23)?,
             })
         })?;
 
@@ -556,33 +586,164 @@ impl DatabaseManager {
         Ok(vulns)
     }
 
-    pub fn insert_vulnerability(&self, v: &Vulnerability) -> Result<()> {
+    pub fn insert_vulnerability_with_dedup(&self, v: &Vulnerability) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO vulnerabilities (id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
-            params![
-                v.id,
-                v.scan_id,
-                v.asset_id,
-                v.title,
-                v.category,
-                v.attack_type,
-                v.vector,
-                v.severity,
-                v.confidence,
-                v.cve,
-                v.cwe,
-                v.owasp,
-                v.cvss_score,
-                v.description,
-                v.evidence_json,
-                v.remediation,
-                if v.verified { 1 } else { 0 },
-                v.status,
-                v.created_at
-            ],
-        )?;
+        let fp = v.fingerprint.clone().unwrap_or_else(|| {
+            format!("{}:{}:{}:{}", v.asset_id, v.attack_type, v.vector, v.title)
+        });
+
+        // Check if matching vulnerability already exists for this asset
+        let existing: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT id, occurrences FROM vulnerabilities WHERE asset_id = ?1 AND fingerprint = ?2",
+                params![v.asset_id, fp],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+
+        if let Some((existing_id, occ)) = existing {
+            // Update existing entry: increment occurrences count and update evidence without polluting duplicates
+            conn.execute(
+                "UPDATE vulnerabilities SET occurrences = ?1, confidence = MAX(confidence, ?2), evidence_json = ?3 WHERE id = ?4",
+                params![occ + 1, v.confidence, v.evidence_json, existing_id],
+            )?;
+        } else {
+            conn.execute(
+                "INSERT INTO vulnerabilities (id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at, fingerprint, false_positive_reason, remediation_notes, resolved_at, occurrences) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                params![
+                    v.id,
+                    v.scan_id,
+                    v.asset_id,
+                    v.title,
+                    v.category,
+                    v.attack_type,
+                    v.vector,
+                    v.severity,
+                    v.confidence,
+                    v.cve,
+                    v.cwe,
+                    v.owasp,
+                    v.cvss_score,
+                    v.description,
+                    v.evidence_json,
+                    v.remediation,
+                    if v.verified { 1 } else { 0 },
+                    v.status,
+                    v.created_at,
+                    fp,
+                    v.false_positive_reason,
+                    v.remediation_notes,
+                    v.resolved_at,
+                    v.occurrences
+                ],
+            )?;
+        }
+
         Ok(())
+    }
+
+    pub fn update_vulnerability_status(
+        &self,
+        id: &str,
+        new_status: &str,
+        notes: Option<&str>,
+        actor: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let prev_status: String = conn.query_row(
+            "SELECT status FROM vulnerabilities WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let resolved_at = if new_status == "remediated" {
+            Some(now.clone())
+        } else {
+            None
+        };
+
+        let fp_reason = if new_status == "false_positive" {
+            notes.map(|n| n.to_string())
+        } else {
+            None
+        };
+
+        conn.execute(
+            "UPDATE vulnerabilities SET status = ?1, remediation_notes = ?2, resolved_at = ?3, false_positive_reason = COALESCE(?4, false_positive_reason) WHERE id = ?5",
+            params![new_status, notes, resolved_at, fp_reason, id],
+        )?;
+
+        // Record in vulnerability history
+        let hist_id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO vulnerability_history (id, vulnerability_id, previous_status, new_status, actor, notes, changed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![hist_id, id, prev_status, new_status, actor, notes, now],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn get_remediation_diff(&self, asset_id: &str) -> Result<RemediationDiff> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, scan_id, asset_id, title, category, attack_type, vector, severity, confidence, cve, cwe, owasp, cvss_score, description, evidence_json, remediation, verified, status, created_at, fingerprint, false_positive_reason, remediation_notes, resolved_at, occurrences FROM vulnerabilities WHERE asset_id = ?1",
+        )?;
+
+        let rows = stmt.query_map(params![asset_id], |row| {
+            let verif_int: i64 = row.get(16)?;
+            Ok(Vulnerability {
+                id: row.get(0)?,
+                scan_id: row.get(1)?,
+                asset_id: row.get(2)?,
+                title: row.get(3)?,
+                category: row.get(4)?,
+                attack_type: row.get(5)?,
+                vector: row.get(6)?,
+                severity: row.get(7)?,
+                confidence: row.get(8)?,
+                cve: row.get(9)?,
+                cwe: row.get(10)?,
+                owasp: row.get(11)?,
+                cvss_score: row.get(12)?,
+                description: row.get(13)?,
+                evidence_json: row.get(14)?,
+                remediation: row.get(15)?,
+                verified: verif_int == 1,
+                status: row.get(17)?,
+                created_at: row.get(18)?,
+                fingerprint: row.get(19)?,
+                false_positive_reason: row.get(20)?,
+                remediation_notes: row.get(21)?,
+                resolved_at: row.get(22)?,
+                occurrences: row.get(23)?,
+            })
+        })?;
+
+        let mut new_findings = Vec::new();
+        let mut resolved_findings = Vec::new();
+        let mut persistent_findings = Vec::new();
+
+        for r in rows {
+            let v = r?;
+            if v.status == "remediated" {
+                resolved_findings.push(v);
+            } else if v.occurrences > 1 && v.status == "open" {
+                persistent_findings.push(v);
+            } else if v.status == "open" {
+                new_findings.push(v);
+            }
+        }
+
+        Ok(RemediationDiff {
+            new_findings,
+            resolved_findings,
+            persistent_findings,
+        })
+    }
+
+    pub fn insert_vulnerability(&self, v: &Vulnerability) -> Result<()> {
+        self.insert_vulnerability_with_dedup(v)
     }
 
     pub fn list_audit_logs(&self) -> Result<Vec<AuditLog>> {
@@ -816,5 +977,161 @@ mod tests {
         let closed = db.list_audit_sessions(None).unwrap();
         assert_eq!(closed[0].status, "completed");
         assert!(closed[0].end_time.is_some());
+    }
+
+    #[test]
+    fn test_vulnerability_deduplication() {
+        let db = DatabaseManager::new_in_memory().expect("Should initialize in-memory DB");
+        let asset = Asset {
+            id: "ast-dedup-1".to_string(),
+            name: "App".to_string(),
+            target: "https://app.local".to_string(),
+            asset_type: "url".to_string(),
+            authorized: true,
+            authorized_by: None,
+            authorized_at: None,
+            notes: None,
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+            updated_at: "2026-11-01T00:00:00Z".to_string(),
+        };
+        db.insert_asset(&asset).unwrap();
+
+        let scan = Scan {
+            id: "scan-dedup-1".to_string(),
+            name: "Dedup Test Scan".to_string(),
+            asset_id: "ast-dedup-1".to_string(),
+            scan_mode: "active".to_string(),
+            status: "completed".to_string(),
+            progress: 100.0,
+            started_at: None,
+            completed_at: None,
+            error_message: None,
+            config_json: "{}".to_string(),
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+        };
+        db.insert_scan(&scan).unwrap();
+
+        let v1 = Vulnerability {
+            id: "v-dedup-1".to_string(),
+            scan_id: "scan-dedup-1".to_string(),
+            asset_id: "ast-dedup-1".to_string(),
+            title: "XSS Search".to_string(),
+            category: "Web Security".to_string(),
+            attack_type: "xss".to_string(),
+            vector: "query:q".to_string(),
+            severity: "high".to_string(),
+            confidence: 90,
+            cve: None,
+            cwe: Some("CWE-79".to_string()),
+            owasp: Some("A03:2021".to_string()),
+            cvss_score: Some(7.5),
+            description: None,
+            evidence_json: "{\"param\": \"q\"}".to_string(),
+            remediation: None,
+            verified: true,
+            status: "open".to_string(),
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+            fingerprint: Some("ast-dedup-1:xss:query:q:XSS Search".to_string()),
+            false_positive_reason: None,
+            remediation_notes: None,
+            resolved_at: None,
+            occurrences: 1,
+        };
+
+        db.insert_vulnerability_with_dedup(&v1).expect("Insert v1");
+
+        // Insert identical vulnerability
+        let mut v2 = v1.clone();
+        v2.id = "v-dedup-2".to_string();
+        v2.confidence = 95;
+        db.insert_vulnerability_with_dedup(&v2).expect("Insert v2 should dedup");
+
+        let vulns = db.list_vulnerabilities().expect("List vulns");
+        assert_eq!(vulns.len(), 1, "Duplicate should not create new row");
+        assert_eq!(vulns[0].occurrences, 2, "Occurrences counter should be incremented");
+        assert_eq!(vulns[0].confidence, 95, "Confidence should take maximum");
+    }
+
+    #[test]
+    fn test_remediation_status_transition_and_history() {
+        let db = DatabaseManager::new_in_memory().expect("Should initialize in-memory DB");
+        let asset = Asset {
+            id: "ast-rem-1".to_string(),
+            name: "App".to_string(),
+            target: "https://app.local".to_string(),
+            asset_type: "url".to_string(),
+            authorized: true,
+            authorized_by: None,
+            authorized_at: None,
+            notes: None,
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+            updated_at: "2026-11-01T00:00:00Z".to_string(),
+        };
+        db.insert_asset(&asset).unwrap();
+
+        let scan = Scan {
+            id: "scan-rem-1".to_string(),
+            name: "Remediation Test Scan".to_string(),
+            asset_id: "ast-rem-1".to_string(),
+            scan_mode: "active".to_string(),
+            status: "completed".to_string(),
+            progress: 100.0,
+            started_at: None,
+            completed_at: None,
+            error_message: None,
+            config_json: "{}".to_string(),
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+        };
+        db.insert_scan(&scan).unwrap();
+
+        let v = Vulnerability {
+            id: "v-rem-1".to_string(),
+            scan_id: "scan-rem-1".to_string(),
+            asset_id: "ast-rem-1".to_string(),
+            title: "SSTI Render".to_string(),
+            category: "Web Security".to_string(),
+            attack_type: "ssti".to_string(),
+            vector: "query:tmpl".to_string(),
+            severity: "critical".to_string(),
+            confidence: 100,
+            cve: None,
+            cwe: Some("CWE-1336".to_string()),
+            owasp: Some("A03:2021".to_string()),
+            cvss_score: Some(9.8),
+            description: None,
+            evidence_json: "{}".to_string(),
+            remediation: None,
+            verified: true,
+            status: "open".to_string(),
+            created_at: "2026-11-01T00:00:00Z".to_string(),
+            fingerprint: Some("ast-rem-1:ssti:query:tmpl:SSTI Render".to_string()),
+            false_positive_reason: None,
+            remediation_notes: None,
+            resolved_at: None,
+            occurrences: 1,
+        };
+        db.insert_vulnerability_with_dedup(&v).unwrap();
+
+        // Mark remediated
+        db.update_vulnerability_status(
+            "v-rem-1",
+            "remediated",
+            Some("Patched in release v2.4 by escaping template strings"),
+            "SecLead",
+        )
+        .expect("Update status");
+
+        let updated = db.list_vulnerabilities().unwrap();
+        assert_eq!(updated[0].status, "remediated");
+        assert!(updated[0].resolved_at.is_some());
+        assert_eq!(
+            updated[0].remediation_notes,
+            Some("Patched in release v2.4 by escaping template strings".to_string())
+        );
+
+        // Check remediation diff
+        let diff = db.get_remediation_diff("ast-rem-1").unwrap();
+        assert_eq!(diff.resolved_findings.len(), 1);
+        assert_eq!(diff.new_findings.len(), 0);
     }
 }
