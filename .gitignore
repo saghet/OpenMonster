@@ -1,0 +1,36 @@
+# Node / Bun
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust / Cargo
+target/
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# SQLite
+*.sqlite
+*.sqlite3
+*.db
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+scratch/
+tmp/
+*.log
