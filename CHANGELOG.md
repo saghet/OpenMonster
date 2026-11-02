@@ -46,3 +46,19 @@ El formato sigue las pautas de Keep a Changelog y se adhiere a la licencia GPL-3
 - Eliminación de capacidades innecesarias de shell desde el frontend (`shell:allow-execute` revocado; todo comando se orquesta exclusivamente desde el backend de Rust con mínimos privilegios).
 - Empaquetado para Linux (AppImage y Debian).
 - Documentación completa de operación en `USER_GUIDE.md`.
+
+---
+
+## [1.1.0] - 2026-11-01
+
+### Módulo Reconnaissance & Intelligence Engine (Fases A a J)
+- **Fase A (Auditoría Técnica y Arquitectura):** Inspección forense de las capacidades de reconocimiento del proyecto original secMONSTER. Diagnóstico de dependencias y diseño desacoplado en 5 sub-motores.
+- **Fase B (Contratos de Datos y Esquema Relacional):** Migración SQLite `004_reconnaissance_engine.sql` (`recon_scans`, `recon_subdomains`, `recon_dns_records`, `recon_technologies`, `recon_http_fingerprints`), estructuras Rust y orquestador central con control de límites de alcance (*scope enforcement*).
+- **Fase C (Passive Reconnaissance Engine):** Integración de Certificate Transparency (`crt.sh`), OSINT público (`HackerTarget`) y adaptadores para `subfinder` y `amass`. Normalización RFC 1123, eliminación de comodines y etiquetado de activos legados/entornos (`risk:potentially_forgotten`).
+- **Fase D (DNS Intelligence Engine):** Resolución multirregistro (`A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`, `PTR`), verificación criptográfica de `DNSSEC`, consultas inversas PTR y detección heurística de vectores de **Subdomain Takeover** (clasificados estrictamente como hallazgos sujetos a validación sin acciones de reclamo).
+- **Fase E (HTTP & TLS Header Intelligence Engine):** Diagnóstico de transporte seguro y certificados X.509 (versión TLS, algoritmo de cifrado, emisor CA y días restantes hasta expiración con alerta si $<30$ días). Auditoría de cabeceras de seguridad (`HSTS`, `CSP`, `X-Frame-Options`, `X-Content-Type-Options`) y evaluación de atributos de cookies (`Secure`, `HttpOnly`, `SameSite`).
+- **Fase F (Technology Fingerprinting Engine):** Base de firmas extensible `technologies.json` compatible con Wappalyzer. Detección multifactorial en 5 dimensiones (cabeceras, cookies de sesión, etiquetas `<meta>`, scripts cargados y DOM) con calibración de certeza (`Confirmed`, `Probable`, `Suspected`).
+- **Fase G (Intelligence Correlation Engine):** Construcción de grafo topológico de superficie de ataque, clusterización por infraestructura compartida (*IP clustering*) y auditoría diferencial histórica (*diffing* entre escaneos).
+- **Fase H (Interfaz de Usuario y Visualización):** Panel gráfico profesional en React, Tailwind CSS y Lucide Icons con 6 pestañas interactivas, métricas KPI en tiempo real, barra de progreso por streaming (`recon-event`), terminal colapsable de eventos y exportación directa a JSON y CSV.
+- **Fase I (Integración con la Suite):** Enlace directo para promover subdominios descubiertos al catálogo de activos en *Asset Discovery*, deduplicación e inserción automática de hallazgos de cabeceras/TLS en *Vulnerability Management* y generación de bitácoras de auditoría inmutables.
+- **Fase J (Hardening, Pruebas y Despliegue):** 44 pruebas unitarias herméticas en Python (100% aprobadas), 7 pruebas en Rust (100% aprobadas), compilación de paquete de escritorio de lanzamiento (*release binary*) y publicación del código fuente en GitHub.

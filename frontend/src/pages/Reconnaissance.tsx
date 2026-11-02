@@ -64,6 +64,22 @@ export const Reconnaissance: React.FC<ReconnaissanceProps> = ({
   const [subdomainFilterLive, setSubdomainFilterLive] = useState<'all' | 'live' | 'unconfirmed'>('all');
   const [dnsTypeFilter, setDnsTypeFilter] = useState<string>('ALL');
   const [techCategoryFilter, setTechCategoryFilter] = useState<string>('ALL');
+  const [importedSubdomains, setImportedSubdomains] = useState<Set<string>>(new Set());
+
+  const handleImportSubdomain = async (sub: any) => {
+    try {
+      await api.createAsset(
+        sub.subdomain,
+        sub.subdomain,
+        'domain',
+        `Importado automáticamente desde Reconnaissance Engine (Origen: ${sub.source}, Confianza: ${sub.confidence}%)`
+      );
+      setImportedSubdomains((prev) => new Set(prev).add(sub.subdomain));
+      onRefreshGlobal?.();
+    } catch (err) {
+      console.error('Failed to import subdomain as asset:', err);
+    }
+  };
 
   // Load summary and historical scans for the asset
   const loadData = useCallback(async () => {
@@ -304,9 +320,20 @@ export const Reconnaissance: React.FC<ReconnaissanceProps> = ({
                     Objetivo: {selectedAsset.target}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Descubrimiento pasivo de subdominios, resolución multirregistro DNS, fingerprinting tecnológico Wappalyzer e inspección TLS/HTTP.
-                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  <p className="text-xs text-slate-400">
+                    Descubrimiento pasivo de subdominios, resolución multirregistro DNS, fingerprinting tecnológico Wappalyzer e inspección TLS/HTTP.
+                  </p>
+                  {onNavigateToAssetDiscovery && (
+                    <button
+                      onClick={onNavigateToAssetDiscovery}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 font-medium inline-flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <span>Ver Catálogo de Activos</span>
+                      <ArrowRight size={11} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -669,14 +696,26 @@ export const Reconnaissance: React.FC<ReconnaissanceProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right">
                             <button
-                              onClick={() => {
-                                if (onNavigateToAssetDiscovery) onNavigateToAssetDiscovery();
-                              }}
-                              title="Registrar en Asset Discovery"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-300 text-[11px] rounded font-sans transition-colors cursor-pointer"
+                              onClick={() => handleImportSubdomain(sub)}
+                              disabled={importedSubdomains.has(sub.subdomain)}
+                              title={importedSubdomains.has(sub.subdomain) ? 'Ya importado como activo' : 'Registrar en Asset Discovery'}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] rounded font-sans transition-colors cursor-pointer ${
+                                importedSubdomains.has(sub.subdomain)
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-300'
+                              }`}
                             >
-                              <span>Importar</span>
-                              <ArrowRight size={11} />
+                              {importedSubdomains.has(sub.subdomain) ? (
+                                <>
+                                  <CheckCircle2 size={11} />
+                                  <span>Importado</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>Importar</span>
+                                  <ArrowRight size={11} />
+                                </>
+                              )}
                             </button>
                           </td>
                         </tr>

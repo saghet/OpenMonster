@@ -944,8 +944,53 @@ pub async fn create_recon_scan(
                                         let _ = db_clone.insert_recon_http_fingerprint(&fp);
                                     }
                                 }
+                                "finding" => {
+                                    if let Some(d) = event.get("data") {
+                                        let vuln = Vulnerability {
+                                            id: Uuid::new_v4().to_string(),
+                                            scan_id: scan_id_clone.clone(),
+                                            asset_id: asset_id_clone.clone(),
+                                            title: d.get("title").and_then(|s| s.as_str()).unwrap_or("Unknown Security Finding").to_string(),
+                                            category: d.get("category").and_then(|s| s.as_str()).unwrap_or("Web Security").to_string(),
+                                            attack_type: d.get("attack_type").and_then(|s| s.as_str()).unwrap_or("recon").to_string(),
+                                            vector: d.get("vector").and_then(|s| s.as_str()).unwrap_or("endpoint").to_string(),
+                                            severity: d.get("severity").and_then(|s| s.as_str()).unwrap_or("low").to_string(),
+                                            confidence: d.get("confidence").and_then(|c| c.as_i64()).unwrap_or(80),
+                                            cve: d.get("cve").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            cwe: d.get("cwe").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            owasp: d.get("owasp").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            cvss_score: d.get("cvss_score").and_then(|c| c.as_f64()),
+                                            description: d.get("description").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            evidence_json: serde_json::to_string(&d.get("evidence").unwrap_or(&serde_json::json!({}))).unwrap_or_else(|_| "{}".to_string()),
+                                            remediation: d.get("remediation").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            verified: d.get("verified").and_then(|v| v.as_bool()).unwrap_or(true),
+                                            status: "open".to_string(),
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                            fingerprint: None,
+                                            false_positive_reason: None,
+                                            remediation_notes: None,
+                                            resolved_at: None,
+                                            occurrences: 1,
+                                        };
+                                        let _ = db_clone.insert_vulnerability_with_dedup(&vuln);
+                                    }
+                                }
                                 "completed" => {
                                     let _ = db_clone.update_recon_scan_status(&scan_id_clone, "completed", sub_count, dns_count, tech_count, None);
+                                    let log = AuditLog {
+                                        id: Uuid::new_v4().to_string(),
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                        actor: "Operator".to_string(),
+                                        action: "RECON_SCAN_COMPLETED".to_string(),
+                                        target: Some(asset_id_clone.clone()),
+                                        details_json: serde_json::json!({
+                                            "subdomains_count": sub_count,
+                                            "dns_records_count": dns_count,
+                                            "technologies_count": tech_count,
+                                        }).to_string(),
+                                        status: "SUCCESS".to_string(),
+                                    };
+                                    let _ = db_clone.insert_audit_log(&log);
                                 }
                                 "error" => {
                                     let err_msg = event.pointer("/data/message").and_then(|m| m.as_str()).unwrap_or("Unknown error");

@@ -15,8 +15,9 @@
 
 - **Desktop Core:** Tauri 2 + Rust for process orchestration, resource isolation, safe IPC, and audit logging.
 - **Frontend Experience:** Modern React 18, TypeScript, Tailwind CSS, Lucide Icons, and Recharts.
+- **Reconnaissance & Intelligence Engine:** Modular attack surface discovery suite (Passive OSINT, Certificate Transparency, multi-record DNS resolution, DNSSEC, takeover detection, X.509/TLS cryptography, and Wappalyzer-compatible multi-factor technology fingerprinting).
 - **Security Engine:** Python 3.12+ modular engine with strict differential verification (eliminating upstream false positives like naive regex matching).
-- **Persistent Storage:** SQLite with versioned schema migrations and audit history.
+- **Persistent Storage:** SQLite with versioned schema migrations (001-004) and audit history.
 - **Scope & Safety Architecture:** Strict target whitelisting, passive-by-default scanning, rate limiting, and instantaneous cancellation.
 
 ---
@@ -29,6 +30,13 @@ sec-master/
 ├── src-tauri/            # Tauri 2 + Rust orchestration & secure IPC
 ├── engine/               # Python 3.12+ Modular Security Scanner
 │   ├── core/             # Engine orchestration, cancellation & events
+│   ├── recon/            # Reconnaissance & Intelligence Engine
+│   │   ├── passive.py    # CT logs (crt.sh), OSINT & tool adapters (subfinder, amass)
+│   │   ├── dns_engine.py # RFC DNS resolver (A, MX, NS, CNAME, DNSSEC, PTR, takeover)
+│   │   ├── http_engine.py# HTTP headers, cookie security, TLS X.509 cert analysis
+│   │   ├── fingerprint.py# Multi-factor technology fingerprinting (Wappalyzer)
+│   │   ├── correlation.py# Attack surface topology, clustering & historical diffing
+│   │   └── signatures/   # Extensible technology signatures JSON database
 │   ├── scanners/         # Web, API, Auth, and Protocol scanners
 │   ├── plugins/          # Extensible plugin system
 │   ├── validators/       # Scope enforcement & target validation
