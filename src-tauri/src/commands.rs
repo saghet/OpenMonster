@@ -1,6 +1,7 @@
 use crate::db::{
-    Asset, AuditLog, AuditSession, DashboardStats, DatabaseManager, Scan, Scope, ScopeExclusion,
-    Vulnerability,
+    Asset, AuditLog, AuditSession, DashboardStats, DatabaseManager, ReconDnsRecord,
+    ReconHttpFingerprint, ReconScan, ReconSubdomain, ReconSummary, ReconTechnology, Scan, Scope,
+    ScopeExclusion, Vulnerability,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -743,4 +744,278 @@ pub async fn get_system_diagnostics() -> Result<serde_json::Value, String> {
         .map_err(|e| format!("Failed to parse diagnostics JSON: {} (Raw: {})", e, stdout_str))?;
 
     Ok(res)
+}
+
+fn get_recon_orchestrator_path() -> std::path::PathBuf {
+    let p1 = std::path::PathBuf::from("engine/recon/orchestrator.py");
+    if p1.exists() {
+        return p1;
+    }
+    let p2 = std::path::PathBuf::from("../engine/recon/orchestrator.py");
+    if p2.exists() {
+        return p2;
+    }
+    p1
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateReconScanRequest {
+    pub asset_id: String,
+    pub mode: String,
+    pub rate_limit: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn create_recon_scan(
+    req: CreateReconScanRequest,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ReconScan, String> {
+    let assets = state.db.list_assets().map_err(|e| e.to_string())?;
+    let target_asset = assets.iter().find(|a| a.id == req.asset_id).cloned();
+
+    let asset = match target_asset {
+        Some(a) => {
+            if req.mode != "passive" && !a.authorized {
+                return Err("Scope authorization required: Target asset is not explicitly authorized for active reconnaissance testing.".to_string());
+            }
+            a
+        }
+        None => return Err("Asset not found.".to_string()),
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let scan = ReconScan {
+        id: Uuid::new_v4().to_string(),
+        asset_id: req.asset_id.clone(),
+        status: "running".to_string(),
+        mode: req.mode.clone(),
+        target_domain: asset.target.clone(),
+        subdomains_count: 0,
+        dns_records_count: 0,
+        technologies_count: 0,
+        started_at: now.clone(),
+        completed_at: None,
+        error_message: None,
+    };
+
+    state.db.insert_recon_scan(&scan).map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: now.clone(),
+        actor: "Operator".to_string(),
+        action: "START_RECON_SCAN".to_string(),
+        target: Some(scan.asset_id.clone()),
+        details_json: format!("{{\"recon_scan_id\": \"{}\", \"mode\": \"{}\"}}", scan.id, scan.mode),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    let orch_path = get_recon_orchestrator_path();
+    let rate_limit_arg = req.rate_limit.unwrap_or(10).to_string();
+
+    let mut cmd = Command::new("python3");
+    cmd.arg(&orch_path)
+        .arg("--target")
+        .arg(&asset.target)
+        .arg("--asset-id")
+        .arg(&scan.asset_id)
+        .arg("--recon-scan-id")
+        .arg(&scan.id)
+        .arg("--mode")
+        .arg(&scan.mode)
+        .arg("--rate-limit")
+        .arg(&rate_limit_arg)
+        .arg("--allowed-targets")
+        .arg(&asset.target);
+
+    if scan.mode == "passive" {
+        cmd.arg("--passive-only");
+    }
+
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let pid = child.id().unwrap_or(0);
+            if pid > 0 {
+                let mut map = state.running_processes.lock().unwrap();
+                map.insert(scan.id.clone(), pid);
+            }
+
+            let stdout = child.stdout.take();
+            let db_clone = state.db.clone();
+            let proc_map_clone = state.running_processes.clone();
+            let scan_id_clone = scan.id.clone();
+            let asset_id_clone = scan.asset_id.clone();
+            let app_clone = app_handle.clone();
+
+            tokio::spawn(async move {
+                let mut sub_count = 0;
+                let mut dns_count = 0;
+                let mut tech_count = 0;
+
+                if let Some(out) = stdout {
+                    let mut reader = BufReader::new(out).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        if let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) {
+                            let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                            let _ = app_clone.emit("recon-event", &event);
+
+                            match event_type {
+                                "recon_subdomain" => {
+                                    if let Some(d) = event.get("data") {
+                                        sub_count += 1;
+                                        let sub = ReconSubdomain {
+                                            id: Uuid::new_v4().to_string(),
+                                            recon_scan_id: scan_id_clone.clone(),
+                                            asset_id: asset_id_clone.clone(),
+                                            subdomain: d.get("subdomain").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            ip_addresses: serde_json::to_string(&d.get("ip_addresses").unwrap_or(&serde_json::json!([]))).unwrap_or_else(|_| "[]".to_string()),
+                                            source: d.get("source").and_then(|s| s.as_str()).unwrap_or("crt.sh").to_string(),
+                                            confidence: d.get("confidence").and_then(|c| c.as_i64()).unwrap_or(80),
+                                            is_live: d.get("is_live").and_then(|l| l.as_bool()).unwrap_or(false),
+                                            http_status: d.get("http_status").and_then(|s| s.as_i64()),
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                        };
+                                        let _ = db_clone.insert_recon_subdomain(&sub);
+                                    }
+                                }
+                                "recon_dns" => {
+                                    if let Some(d) = event.get("data") {
+                                        dns_count += 1;
+                                        let rec = ReconDnsRecord {
+                                            id: Uuid::new_v4().to_string(),
+                                            recon_scan_id: scan_id_clone.clone(),
+                                            asset_id: asset_id_clone.clone(),
+                                            domain: d.get("domain").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            record_type: d.get("record_type").and_then(|s| s.as_str()).unwrap_or("A").to_string(),
+                                            record_value: d.get("record_value").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            ttl: d.get("ttl").and_then(|t| t.as_i64()),
+                                            is_takeover_risk: d.get("is_takeover_risk").and_then(|r| r.as_bool()).unwrap_or(false),
+                                            takeover_reason: d.get("takeover_reason").and_then(|r| r.as_str()).map(|s| s.to_string()),
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                        };
+                                        let _ = db_clone.insert_recon_dns_record(&rec);
+                                    }
+                                }
+                                "recon_tech" => {
+                                    if let Some(d) = event.get("data") {
+                                        tech_count += 1;
+                                        let tech = ReconTechnology {
+                                            id: Uuid::new_v4().to_string(),
+                                            recon_scan_id: scan_id_clone.clone(),
+                                            asset_id: asset_id_clone.clone(),
+                                            target_url: d.get("target_url").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            name: d.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            category: d.get("category").and_then(|s| s.as_str()).unwrap_or("Web Server").to_string(),
+                                            version: d.get("version").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            confidence: d.get("confidence").and_then(|s| s.as_str()).unwrap_or("Confirmed").to_string(),
+                                            matched_indicators_json: serde_json::to_string(&d.get("matched_indicators").unwrap_or(&serde_json::json!([]))).unwrap_or_else(|_| "[]".to_string()),
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                        };
+                                        let _ = db_clone.insert_recon_technology(&tech);
+                                    }
+                                }
+                                "recon_http" => {
+                                    if let Some(d) = event.get("data") {
+                                        let fp = ReconHttpFingerprint {
+                                            id: Uuid::new_v4().to_string(),
+                                            recon_scan_id: scan_id_clone.clone(),
+                                            asset_id: asset_id_clone.clone(),
+                                            target_url: d.get("target_url").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                            status_code: d.get("status_code").and_then(|s| s.as_i64()).unwrap_or(200),
+                                            server_header: d.get("server_header").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            title: d.get("title").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            content_type: d.get("content_type").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            tls_version: d.get("tls_version").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            tls_cipher: d.get("tls_cipher").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            tls_cert_subject: d.get("tls_cert_subject").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            tls_cert_issuer: d.get("tls_cert_issuer").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                                            tls_cert_days_left: d.get("tls_cert_days_left").and_then(|s| s.as_i64()),
+                                            security_headers_json: serde_json::to_string(&d.get("security_headers").unwrap_or(&serde_json::json!({}))).unwrap_or_else(|_| "{}".to_string()),
+                                            cookies_json: serde_json::to_string(&d.get("cookies").unwrap_or(&serde_json::json!([]))).unwrap_or_else(|_| "[]".to_string()),
+                                            raw_headers_json: serde_json::to_string(&d.get("raw_headers").unwrap_or(&serde_json::json!({}))).unwrap_or_else(|_| "{}".to_string()),
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                        };
+                                        let _ = db_clone.insert_recon_http_fingerprint(&fp);
+                                    }
+                                }
+                                "completed" => {
+                                    let _ = db_clone.update_recon_scan_status(&scan_id_clone, "completed", sub_count, dns_count, tech_count, None);
+                                }
+                                "error" => {
+                                    let err_msg = event.pointer("/data/message").and_then(|m| m.as_str()).unwrap_or("Unknown error");
+                                    let _ = db_clone.update_recon_scan_status(&scan_id_clone, "failed", sub_count, dns_count, tech_count, Some(err_msg));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                let _ = child.wait().await;
+                let mut map = proc_map_clone.lock().unwrap();
+                map.remove(&scan_id_clone);
+            });
+        }
+        Err(e) => {
+            let _ = state.db.update_recon_scan_status(&scan.id, "failed", 0, 0, 0, Some(&e.to_string()));
+            return Err(format!("Failed to launch reconnaissance orchestrator: {}", e));
+        }
+    }
+
+    Ok(scan)
+}
+
+#[tauri::command]
+pub async fn cancel_recon_scan(scan_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let pid_opt = {
+        let mut map = state.running_processes.lock().unwrap();
+        map.remove(&scan_id)
+    };
+
+    if let Some(pid) = pid_opt {
+        let _ = std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .output();
+    }
+
+    state
+        .db
+        .update_recon_scan_status(&scan_id, "cancelled", 0, 0, 0, None)
+        .map_err(|e| e.to_string())?;
+
+    let log = AuditLog {
+        id: Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: "Operator".to_string(),
+        action: "CANCEL_RECON_SCAN".to_string(),
+        target: Some(scan_id),
+        details_json: "{}".to_string(),
+        status: "SUCCESS".to_string(),
+    };
+    let _ = state.db.insert_audit_log(&log);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_recon_scans(
+    asset_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<ReconScan>, String> {
+    state.db.list_recon_scans(asset_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_recon_summary(
+    asset_id: String,
+    state: State<'_, AppState>,
+) -> Result<ReconSummary, String> {
+    state.db.get_recon_summary(&asset_id).map_err(|e| e.to_string())
 }

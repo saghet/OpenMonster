@@ -60,7 +60,11 @@ pub fn run() {
             commands::check_ollama_status,
             commands::explain_vulnerability_ai,
             commands::prioritize_vulnerabilities_ai,
-            commands::get_system_diagnostics
+            commands::get_system_diagnostics,
+            commands::create_recon_scan,
+            commands::cancel_recon_scan,
+            commands::list_recon_scans,
+            commands::get_recon_summary
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
