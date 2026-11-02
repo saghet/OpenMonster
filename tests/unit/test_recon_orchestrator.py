@@ -71,11 +71,12 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertTrue(len(res.errors) > 0)
         self.assertIn("authorized whitelist", res.errors[0])
 
+    @patch("engine.recon.fingerprint.TechFingerprintEngine.run")
     @patch("engine.recon.http_engine.HttpIntelligenceEngine.run")
     @patch("engine.recon.dns_engine.DnsIntelligenceEngine.run")
     @patch("engine.recon.passive.PassiveReconEngine.run")
     def test_orchestrator_skeleton_execution(
-        self, mock_passive_run, mock_dns_run, mock_http_run
+        self, mock_passive_run, mock_dns_run, mock_http_run, mock_tech_run
     ):
         mock_passive_run.return_value = [
             SubdomainResult(
@@ -102,6 +103,14 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
                 tls_version="TLSv1.3",
             )
         ]
+        mock_tech_run.return_value = [
+            TechResult(
+                target_url="https://example.com",
+                name="Cloudflare",
+                category="CDN",
+                confidence="Confirmed",
+            )
+        ]
         orch = ReconOrchestrator(
             target="https://example.com",
             asset_id="ast-1",
@@ -115,6 +124,7 @@ class TestReconContractsAndOrchestrator(unittest.TestCase):
         self.assertEqual(res.subdomains[0].subdomain, "dev.example.com")
         self.assertEqual(len(res.dns_records), 1)
         self.assertEqual(len(res.http_fingerprints), 1)
+        self.assertEqual(len(res.technologies), 1)
 
 
 if __name__ == "__main__":

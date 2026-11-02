@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json.schemastore.org/wappalyzer.json",
+  "technologies": [
+    {
+      "name": "Nginx",
+      "category": "Web Server",
+      "headers": {
+        "server": "^nginx(?:/([\\d.]+))?"
+      }
+    },
+    {
+      "name": "Apache HTTP Server",
+      "category": "Web Server",
+      "headers": {
+        "server": "^Apache(?:/([\\d.]+))?"
+      }
+    },
+    {
+      "name": "Cloudflare",
+      "category": "CDN",
+      "headers": {
+        "server": "^cloudflare",
+        "cf-ray": ".+",
+        "cf-cache-status": ".+"
+      },
+      "cookies": ["__cf_bm", "__cfduid"]
+    },
+    {
+      "name": "Amazon CloudFront",
+      "category": "CDN",
+      "headers": {
+        "via": "CloudFront",
+        "x-amz-cf-id": ".+",
+        "x-amz-cf-pop": ".+"
+      }
+    },
+    {
+      "name": "PHP",
+      "category": "Programming Language",
+      "headers": {
+        "x-powered-by": "PHP(?:/([\\d.]+))?"
+      },
+      "cookies": ["PHPSESSID"]
+    },
+    {
+      "name": "Express",
+      "category": "Web Framework",
+      "headers": {
+        "x-powered-by": "^Express$"
+      }
+    },
+    {
+      "name": "ASP.NET",
+      "category": "Web Framework",
+      "headers": {
+        "x-powered-by": "ASP\\.NET",
+        "x-aspnet-version": "([\\d.]+)"
+      },
+      "cookies": ["ASP.NET_SessionId"]
+    },
+    {
+      "name": "Next.js",
+      "category": "Web Framework",
+      "headers": {
+        "x-powered-by": "Next\\.js"
+      },
+      "scripts": ["/_next/static/"],
+      "html": ["id=\"__NEXT_DATA__\""]
+    },
+    {
+      "name": "React",
+      "category": "JavaScript Library",
+      "scripts": ["react(?:\\.production)?(?:\\.min)?\\.js", "react-dom"],
+      "html": ["data-reactroot", "data-reactid"]
+    },
+    {
+      "name": "Vue.js",
+      "category": "Web Framework",
+      "scripts": ["vue(?:\\.runtime)?(?:\\.min)?\\.js"],
+      "html": ["data-v-[a-f0-9]{6,8}"]
+    },
+    {
+      "name": "Angular",
+      "category": "Web Framework",
+      "scripts": ["angular(?:\\.min)?\\.js", "@angular/core"],
+      "html": ["ng-version=\"([\\d.]+)\"", "ng-app"]
+    },
+    {
+      "name": "WordPress",
+      "category": "CMS",
+      "meta": {
+        "generator": "WordPress(?:\\s+([\\d.]+))?"
+      },
+      "scripts": ["/wp-content/", "/wp-includes/"],
+      "html": ["<link[^>]+s[0-9]*\\.wp\\.com", "wp-block-"]
+    },
+    {
+      "name": "Drupal",
+      "category": "CMS",
+      "headers": {
+        "x-generator": "Drupal(?:\\s+([\\d.]+))?"
+      },
+      "meta": {
+        "generator": "Drupal(?:\\s+([\\d.]+))?"
+      },
+      "scripts": ["/sites/default/files/", "drupal\\.js"],
+      "html": ["data-drupal-selector", "drupalSettings"]
+    },
+    {
+      "name": "Django",
+      "category": "Web Framework",
+      "cookies": ["csrftoken"]
+    },
+    {
+      "name": "Laravel",
+      "category": "Web Framework",
+      "cookies": ["laravel_session", "XSRF-TOKEN"]
+    },
+    {
+      "name": "jQuery",
+      "category": "JavaScript Library",
+      "scripts": ["jquery(?:-([\\d.]+))?(?:\\.min)?\\.js"]
+    },
+    {
+      "name": "Bootstrap",
+      "category": "UI Framework",
+      "scripts": ["bootstrap(?:\\.bundle)?(?:-([\\d.]+))?(?:\\.min)?\\.js"],
+      "html": ["class=\"[^\"]*(?:container-fluid|navbar-nav|btn-primary)"]
+    },
+    {
+      "name": "Tailwind CSS",
+      "category": "UI Framework",
+      "scripts": ["tailwindcss", "cdn\\.tailwindcss\\.com"]
+    },
+    {
+      "name": "Shopify",
+      "category": "E-Commerce",
+      "scripts": ["cdn\\.shopify\\.com"],
+      "html": ["Shopify\\.shop"]
+    },
+    {
+      "name": "Fastly",
+      "category": "CDN",
+      "headers": {
+        "x-served-by": "cache-[a-z0-9]+",
+        "fastly-debug-digest": ".+"
+      }
+    },
+    {
+      "name": "Varnish",
+      "category": "Cache Server",
+      "headers": {
+        "via": "varnish",
+        "x-varnish": ".+"
+      }
+    }
+  ]
+}
